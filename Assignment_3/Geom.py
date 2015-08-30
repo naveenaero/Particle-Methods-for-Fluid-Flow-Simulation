@@ -5,11 +5,19 @@ import matplotlib.pyplot as plt
 
 #body parameters
 radius = 1
-n_body_panels = 3
+n_body_panels = 4
 
 #boundary parameters
 side = 2
 n_boundary_panels = side
+
+def distribute_tracers(n_tracers,x_init,y_extreme):
+	tracer_initial_location = np.zeros((n_tracers,1),dtype=complex)
+	y = np.linspace(-y_extreme,y_extreme,n_tracers)
+	for i in range(n_tracers):
+		tracer_initial_location[i] = complex(x_init,y[i])
+	return tracer_initial_location
+
 
 
 def dot_product(v1,v2):
@@ -43,15 +51,12 @@ class BodyGeometry(Geometry):
 		theta = np.linspace(0,2*np.pi,n_nodes)
 		for i in range(self.n_panels):
 			self.cp_theta[i] = (theta[i]+theta[i+1])/2
-		
-		# self.cp = self.radius*np.exp(complex(0,1)*self.cp_theta)			
-		for i in range(self.n_panels):
 			self.cp[i] = (self.nodes[i+1]+self.nodes[i])/2
 
 	def compute_cp_normal(self):
 		for i in range(self.n_panels):
 			panel_vec = self.nodes[i+1]-self.nodes[i]
-			self.normal[i] = self.cp[i] #complex(-panel_vec.imag,panel_vec.real)
+			self.normal[i] = self.cp[i]
 
 
 
@@ -86,11 +91,6 @@ class BoundaryGeometry(Geometry):
 			self.normal[i] = complex(-panel_vec.imag,panel_vec.real)
 
 		
-Body = BodyGeometry(radius,n_body_panels,'circle')
-Body.set_nodes()
-Body.set_control_points()
-Body.compute_cp_normal()
-
 def compute_gamma_coefficients(z,Body,k):
 	z1 = Body.nodes[k]
 	temp = Body.nodes[k+1]-Body.nodes[k]
@@ -99,14 +99,6 @@ def compute_gamma_coefficients(z,Body,k):
 
 	zprime = (z-z1)*cmath.exp(complex(0,-theta))
 	
-	# print "z:",z
-	# print "temp:",z-z1
-	# print "z1:",z1
-	# print "l:",l
-	# print "theta:",math.degrees(theta)
-	# print "exp:",cmath.exp(complex(0,-1)*theta)
-	# print "zprime:",zprime
-	
 	a1 = (zprime/l)-1
 	a2 = a1+1
 	b = cmath.log((a1/a2)[0])
@@ -114,10 +106,6 @@ def compute_gamma_coefficients(z,Body,k):
 	d = complex(0,-1)/(2*np.pi)
 	T1 = np.conj(a1*b + 1)*c*d
 	T2 = -np.conj(a2*b + 1)*c*d
-	# print "T2:",T2
-	# print "b1:",b
-	
-	
 	
 	return T1,T2
 
@@ -131,13 +119,10 @@ def compute_geometry_matrix(Body):
 
 		for j in range(total_panels):
 
-			
 			[P1,P2] = compute_gamma_coefficients(z,Body,j)
-			# print P1,P2
 			gamma_coeff1 = dot_product(P1,Body.cp[i])
 			gamma_coeff2 = dot_product(P2,Body.cp[i])
-			# print gamma_coeff1,gamma_coeff2
-
+			
 			A[i,j] = A[i,j] + gamma_coeff1
 			if j+1<=Body.n_panels-1:
 				A[i,j+1] = A[i,j+1] + gamma_coeff2
@@ -147,13 +132,19 @@ def compute_geometry_matrix(Body):
 	A[-1,:] = 1
 	return A
 
+Body = BodyGeometry(radius,n_body_panels,'circle')
+Body.set_nodes()
+Body.set_control_points()
+Body.compute_cp_normal()
+A = compute_geometry_matrix(Body)
+print A
+tracer_initial_location = distribute_tracers(10,-2,1.5)
+
 
 # plt.plot(Body.nodes.real,Body.nodes.imag,linestyle='-')
 # plt.plot(Body.cp.real,Body.cp.imag,'o')
 # plt.plot(Boundary.nodes.real,Boundary.nodes.imag,linestyle='-')
 # plt.plot(Boundary.cp.real,Boundary.cp.imag,'o')
-A = compute_geometry_matrix(Body)
-print A
 
 # plt.gca().set_aspect('equal',adjustable='box')
 # plt.xlim(-6,6)
@@ -161,14 +152,6 @@ print A
 # plt.show()
 
 
-def distribute_tracers(n_tracers,x_init,y_extreme):
-	tracer_location = np.zeros((n_tracers,1),dtype=complex)
-	y = np.linspace(-y_extreme,y_extreme,n_tracers)
-	for i in range(n_tracers):
-		tracer_location[i] = complex(x_init,y[i])
-	return tracer_location
-
-tracer_location = distribute_tracers(21,-3,1)
 
 
 
