@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 #body parameters
 radius = 1
-n_body_panels = 4
+n_body_panels = 50
 
 #boundary parameters
 side = 2
@@ -116,6 +116,7 @@ def compute_geometry_matrix(Body):
 	A = np.zeros((total_panels+1,total_panels))
 	for i in range(total_panels):
 		z = Body.cp[i]
+		# print z
 
 		for j in range(total_panels):
 
@@ -137,7 +138,8 @@ Body.set_nodes()
 Body.set_control_points()
 Body.compute_cp_normal()
 A = compute_geometry_matrix(Body)
-print A
+# print A
+
 tracer_initial_location = distribute_tracers(10,-2,1.5)
 
 
