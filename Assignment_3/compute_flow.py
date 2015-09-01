@@ -2,10 +2,15 @@ import numpy as np
 import math
 from Geom import *
 
-dt = 0.01
-time_horizon = 5
+
+dt = 0.05
+time_horizon = 15
 nt = int(time_horizon/dt)
 blob_flag = 0
+#rotation rate of cylinder
+omega = 0
+area = np.pi
+circulation = 2*area*omega/(math.sqrt(3))
 
 
 '''
@@ -68,7 +73,7 @@ class Solver:
 		
 		for j in range(len(rhs)):
 			rhs_1.append(rhs[j])
-			yprime.append(self.euler(rhs_1[j],y0[j]))
+			yprime.append(y0[j]+rhs_1[j]*self.dt)
 		
 		for i in range(len(DummyTracers)):
 			DummyTracers[i].CurrentLocation = (yprime[0])[i]
@@ -76,6 +81,8 @@ class Solver:
 		for i in range(len(DummyFlowElements)):
 			DummyFlowElements[i].CurrentLocation = (yprime[1])[i]
 
+		solve_linear_system(DummyFlowElements,Panel)
+		
 		rhs_2.append(compute_local_velocity(DummyTracers,DummyFlowElements,0))
 		rhs_2.append(compute_local_velocity(DummyTracers,DummyFlowElements,1))
 	
@@ -206,9 +213,11 @@ def solve_linear_system(FlowElements,Panel):
 				v = v + FlowElements[j].field(Body.cp[i])
 
 		b[i] = -1*dot_product(v,Body.cp[i])
+		b[-1] = circulation
 		
 	gamma = np.linalg.lstsq(A,b)
 	gamma = gamma[0]
+
 	
 	for i in range(Body.n_panels):
 		Panel[i].gamma1 = gamma[i]
@@ -250,6 +259,7 @@ for i in range(Body.n_panels):
 	v = FlowElements[1].field()
 	b[i] = -1*dot_product(v,Body.cp[i])
 
+
 #solve for Ax=b system of linear equations using
 #least squares estimation to get approximate gamma values
 gamma = np.linalg.lstsq(A,b)
@@ -274,8 +284,9 @@ for i in range(Body.n_panels):
 
 #Solve for the time evolving system by running it in a loop over time and tracers for position update
 for t in range(nt):
+	if t%20==0:
+		print(str(int(100.0*t/nt))+"%........")
 	solve_linear_system(FlowElements,Panel)
-	
 	# for j in range(len(tracer_initial_location)):
 	curr_tracer_position = convert_to_array(FlowElements,TracerElements,'Tracer')
 	curr_tracer_velocity = compute_local_velocity(TracerElements,FlowElements,0)
@@ -285,9 +296,7 @@ for t in range(nt):
 	curr_position = [curr_tracer_position,curr_element_position]
 	curr_velocity = [curr_tracer_velocity,curr_element_velocity]
 	
-	# new_position = sol.euler(curr_velocity,curr_position)
-
-	[new_tracer_position,new_element_position] = sol.euler(TracerElements,FlowElements,curr_velocity,curr_position)
+	[new_tracer_position,new_element_position] = sol.rk2(TracerElements,FlowElements,curr_velocity,curr_position)
 	
 	TracerElements = convert_from_array(FlowElements,TracerElements,new_tracer_position,'Tracer')
 	FlowElements = convert_from_array(FlowElements,TracerElements,new_element_position,'Elements')
@@ -298,38 +307,53 @@ for t in range(nt):
 	location_flowelement_time[t,0] = new_element_position[0][0]
 
 
-	# TracerElements[j].velocity = compute_local_velocity(TracerElements[j].CurrentLocation,FlowElements,'Tracer')
-	# TracerElements[j].CurrentLocation = sol.rk2(TracerElements[j].velocity,TracerElements[j].CurrentLocation,0)
-	# location_tracer_time[t,j]= TracerElements[j].CurrentLocation[0]
-		
-	# for j in range(len(FlowElements)):
-	# if FlowElements[j].__class__.__name__!='Uniform':
-	
-	# curr_position = convert_to_array(FlowElements,TracerElements,'Elements')
-	# curr_velocity = compute_local_velocity(TracerElements,FlowElements,1)
-	# new_position = sol.euler(curr_velocity,curr_position)
-	# new_position = sol.rk2(TracerElements,FlowElements,curr_velocity,curr_position,1)
-	# FlowElements = convert_from_array(FlowElements,TracerElements,new_position,'Elements')
-	# # for j in range(len(FlowElements)):
-	# location_flowelement_time[t,0] = new_position[0][0]
+print "[DONE]"
 
-
-	# FlowElements[j].velocity = compute_local_velocity(FlowElements[j].CurrentLocation,FlowElements,'FlowElements')
-	# FlowElements[j].CurrentLocation = sol.rk2(FlowElements[j].velocity,FlowElements[j].CurrentLocation,1)
-	# location_flowelement_time[t,0] = FlowElements[j].CurrentLocation[0]
 
 ###########################################################################################
+def plot_tracers(location_tracer_time,option):
+	if option=='movie':
+		theta = np.zeros((4,1))
+		radius_vector = np.zeros((4,2),dtype=complex)
+		for i in range(len(theta)):
+			theta[i] = i*np.pi/2
+			
+		for t in range(nt):
+			if t%5==0:
+				plt.plot(Body.nodes.real,Body.nodes.imag,linestyle='-')
+				for l in range(len(theta)):
+					radius_vector[l,0] = cmath.exp(1j*theta[l][0])
+					plt.plot(radius_vector[l,:].real,radius_vector[l,:].imag,linestyle='-')
+				
+				for j in range(len(location_tracer_time[0,:])):
+					if t!=0:
+						plt.plot(location_tracer_time[0:t-1,j].real,location_tracer_time[0:t-1,j].imag,linestyle='-')
+					else:
+						plt.plot(location_tracer_time[0,j].real,location_tracer_time[0,j].imag,linestyle='-')
+					plt.plot(location_tracer_time[t,j].real,location_tracer_time[t,j].imag,'o')
+				plt.gca().set_aspect('equal',adjustable='box')
+				plt.xlim(-6,6)
+				plt.ylim(-6,6)
+				filename = "./Case_1/%04d.png" % (t/5)
+				plt.savefig(filename)
+				plt.clf()
+			theta = theta + dt*omega
 
-#plot the object and the path lines
-plt.plot(Body.nodes.real,Body.nodes.imag,linestyle='-')
-# plt.plot(Body.cp.real,Body.cp.imag,'o')
-for j in range(len(tracer_initial_location)):
-	plt.plot(location_tracer_time[:,j].real,location_tracer_time[:,j].imag,linestyle='-')
-plt.plot(location_flowelement_time[:,0].real,location_flowelement_time[:,0].imag,linestyle='-')
-plt.gca().set_aspect('equal',adjustable='box')
-plt.xlim(-6,6)
-plt.ylim(-6,6)
-plt.show()
+	elif option=='pathlines':
+		plt.plot(Body.nodes.real,Body.nodes.imag,linestyle='-')
+		for j in range(len(location_tracer_time[0,:])):
+			plt.plot(location_tracer_time[:,j].real,location_tracer_time[:,j].imag,linestyle='-')
+			plt.plot(location_tracer_time[-1,j].real,location_tracer_time[-1,j].imag,'o')
+		plt.gca().set_aspect('equal',adjustable='box')
+		plt.xlim(-6,6)
+		plt.ylim(-6,6)
+		filename = "./Case_1/%04d.png" % (t/10)
+		plt.savefig(filename)
+		plt.clf()
+###########################################################################################
+
+
+plot_tracers(location_tracer_time,'movie')
 
 
 

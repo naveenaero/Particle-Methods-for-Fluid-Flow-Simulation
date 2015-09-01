@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 #body parameters
 radius = 1
 n_body_panels = 50
+panel_type = "constant"
 
 #boundary parameters
 side = 2
@@ -91,56 +92,96 @@ class BoundaryGeometry(Geometry):
 			self.normal[i] = complex(-panel_vec.imag,panel_vec.real)
 
 		
-def compute_gamma_coefficients(z,Body,k):
-	z1 = Body.nodes[k]
-	temp = Body.nodes[k+1]-Body.nodes[k]
-	theta = Body.cp_theta[k] + np.pi/2
-	l = np.linalg.norm(temp)
+def compute_gamma_coefficients(z,Body,k,option):
+	if option=='linear':
+		z1 = Body.nodes[k]
+		temp = Body.nodes[k+1]-Body.nodes[k]
+		theta = Body.cp_theta[k] + np.pi/2
+		l = np.linalg.norm(temp)
 
-	zprime = (z-z1)*cmath.exp(complex(0,-theta))
-	
-	a1 = (zprime/l)-1
-	a2 = a1+1
-	b = cmath.log((a1/a2)[0])
-	c = cmath.exp(complex(0,theta))
-	d = complex(0,-1)/(2*np.pi)
-	T1 = np.conj(a1*b + 1)*c*d
-	T2 = -np.conj(a2*b + 1)*c*d
-	
-	return T1,T2
+		zprime = (z-z1)*cmath.exp(complex(0,-theta))
+		
+		a1 = (zprime/l)-1
+		a2 = a1+1
+		b = cmath.log((a1/a2)[0])
+		c = cmath.exp(complex(0,theta))
+		d = complex(0,-1)/(2*np.pi)
+		T1 = np.conj(a1*b + 1)*c*d
+		T2 = -np.conj(a2*b + 1)*c*d
+		
+		return T1,T2
+
+	elif option=='constant':
+		z1 = Body.nodes[k]
+		temp = Body.nodes[k+1]-Body.nodes[k]
+		theta = Body.cp_theta[k] + np.pi/2
+		l = np.linalg.norm(temp)
+
+		zprime = (z-z1)*cmath.exp(complex(0,-theta))
+		
+		a1 = (zprime/l)-1
+		a2 = a1+1
+		b = cmath.log((a1/a2)[0])
+		c = cmath.exp(complex(0,theta))
+		d = complex(0,-1)/(2*np.pi)
+		T1 = np.conj(a1*b + 1)*c*d
+		T2 = -np.conj(a2*b + 1)*c*d
+		
+		return T1,T2
 
 			
 			
-def compute_geometry_matrix(Body):
+def compute_geometry_matrix(Body,option):
 	total_panels = Body.n_panels
 	A = np.zeros((total_panels+1,total_panels))
-	for i in range(total_panels):
-		z = Body.cp[i]
-		# print z
 
-		for j in range(total_panels):
-
-			[P1,P2] = compute_gamma_coefficients(z,Body,j)
-			gamma_coeff1 = dot_product(P1,Body.cp[i])
-			gamma_coeff2 = dot_product(P2,Body.cp[i])
+	if option=="linear":
+		for i in range(total_panels):
+			z = Body.cp[i]
 			
-			A[i,j] = A[i,j] + gamma_coeff1
-			if j+1<=Body.n_panels-1:
-				A[i,j+1] = A[i,j+1] + gamma_coeff2
-			else:
-				A[i,0] = A[i,0] + gamma_coeff2
+			for j in range(total_panels):
 
-	A[-1,:] = 1
-	return A
+				[P1,P2] = compute_gamma_coefficients(z,Body,j,option)
+				gamma_coeff1 = dot_product(P1,Body.cp[i])
+				gamma_coeff2 = dot_product(P2,Body.cp[i])
+				
+				A[i,j] = A[i,j] + gamma_coeff1
+				if j+1<=Body.n_panels-1:
+					A[i,j+1] = A[i,j+1] + gamma_coeff2
+				else:
+					A[i,0] = A[i,0] + gamma_coeff2
+
+		A[-1,:] = 1
+		return A
+
+	elif option=="constant":
+		for i in range(total_panels):
+			z = Body.cp[i]
+			
+			for j in range(total_panels):
+
+				P1 = compute_gamma_coefficients(z,Body,j,option)
+				gamma_coeff1 = dot_product(P1,Body.cp[i])
+				gamma_coeff2 = dot_product(P2,Body.cp[i])
+				
+				A[i,j] = A[i,j] + gamma_coeff1
+				if j+1<=Body.n_panels-1:
+					A[i,j+1] = A[i,j+1] + gamma_coeff2
+				else:
+					A[i,0] = A[i,0] + gamma_coeff2
+
+		A[-1,:] = 1
+		return A
+
 
 Body = BodyGeometry(radius,n_body_panels,'circle')
 Body.set_nodes()
 Body.set_control_points()
 Body.compute_cp_normal()
 A = compute_geometry_matrix(Body)
-# print A
 
-tracer_initial_location = distribute_tracers(10,-2,1.5)
+
+tracer_initial_location = distribute_tracers(31,-5,2.5)
 
 
 # plt.plot(Body.nodes.real,Body.nodes.imag,linestyle='-')
