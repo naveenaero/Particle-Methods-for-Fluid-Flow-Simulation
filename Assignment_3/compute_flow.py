@@ -3,7 +3,7 @@ import math
 from Geom import *
 
 dt = 0.01
-time_horizon = 10
+time_horizon = 5
 nt = int(time_horizon/dt)
 blob_flag = 0
 
@@ -51,22 +51,38 @@ class Solver:
 	def __init__(self,dt):
 		self.dt = dt
 
-	def euler(self,rhs,y0):
-		return y0 + rhs*self.dt;
+	def euler(self,DummyTracers,DummyElements,rhs,y0):
+		new_position = []
+		new_position.append(y0[0] + rhs[0]*self.dt)
+		new_position.append(y0[1]+ rhs[1]*self.dt)
+
+		return new_position[0],new_position[1];
 
 	#flag=0 Tracer and flag=1 FlowELement
-	def rk2(self,DummyTracers,DummyFlowElements,rhs,y0,flag):
-		rhs_1 = rhs
-		yprime = y0 + rhs_1*self.dt
-		if flag==1:
-			for i in range(len(DummyFlowElements)):
-				DummyFlowElements[i].CurrentLocation = yprime[i]	
-			rhs_2 = compute_local_velocity(DummyTracers,DummyFlowElements,flag)
-		else:
-			for i in range(len(DummyTracers)):
-				DummyTracers[i].CurrentLocation  = yprime[i]
-			rhs_2 = compute_local_velocity(DummyTracers,DummyFlowElements,flag) 
-		return y0 + (self.dt/2)*(rhs_1+rhs_2)
+	def rk2(self,DummyTracers,DummyFlowElements,rhs,y0):
+		#Tracer=0 Element=1
+		rhs_1 = []
+		rhs_2 = []
+		yprime = []
+		new_position = []
+		
+		for j in range(len(rhs)):
+			rhs_1.append(rhs[j])
+			yprime.append(self.euler(rhs_1[j],y0[j]))
+		
+		for i in range(len(DummyTracers)):
+			DummyTracers[i].CurrentLocation = (yprime[0])[i]
+
+		for i in range(len(DummyFlowElements)):
+			DummyFlowElements[i].CurrentLocation = (yprime[1])[i]
+
+		rhs_2.append(compute_local_velocity(DummyTracers,DummyFlowElements,0))
+		rhs_2.append(compute_local_velocity(DummyTracers,DummyFlowElements,1))
+	
+		new_position.append(y0[0] + (self.dt/2)*(rhs_1[0]+rhs_2[0]))
+		new_position.append(y0[1] + (self.dt/2)*(rhs_1[1]+rhs_2[1]))
+	
+		return new_position[0],new_position[1]
 
 class LineVortex:
 	def __init__(self,gamma1,gamma2):
@@ -162,11 +178,6 @@ def compute_local_velocity(TracerElements,FlowElements,flag):
 				if FlowElements[i].__class__.__name__=='Uniform':
 					vel[j] = vel[j] + FlowElements[i].field();
 				else:
-					# c = type([])
-					# d = type(location)
-					# if d==c:
-					# 	location = np.asarray(location)
-					# print location
 					vel[j] = vel[j] + FlowElements[i].field(location)
 		return vel
 	else:
@@ -214,8 +225,8 @@ def solve_linear_system(FlowElements,Panel):
 FlowElements = []
 # vortex_location = np.zeros((1),dtype=complex)
 
-vortex1 = Vortex(2,[complex(-1.25,-0)],0.01,4)
-free_stream = Uniform(0,0)
+vortex1 = Vortex(0,[complex(-1.25,-0)],0.01,4)
+free_stream = Uniform(1,0)
 FlowElements.append(vortex1)
 FlowElements.append(free_stream)
 ###########################################################################################
@@ -264,15 +275,28 @@ for i in range(Body.n_panels):
 #Solve for the time evolving system by running it in a loop over time and tracers for position update
 for t in range(nt):
 	solve_linear_system(FlowElements,Panel)
+	
 	# for j in range(len(tracer_initial_location)):
-	curr_position = convert_to_array(FlowElements,TracerElements,'Tracer')
-	curr_velocity = compute_local_velocity(TracerElements,FlowElements,0)
+	curr_tracer_position = convert_to_array(FlowElements,TracerElements,'Tracer')
+	curr_tracer_velocity = compute_local_velocity(TracerElements,FlowElements,0)
+	curr_element_position = convert_to_array(FlowElements,TracerElements,'Elements')
+	curr_element_velocity = compute_local_velocity(TracerElements,FlowElements,1)
+
+	curr_position = [curr_tracer_position,curr_element_position]
+	curr_velocity = [curr_tracer_velocity,curr_element_velocity]
+	
 	# new_position = sol.euler(curr_velocity,curr_position)
-	new_position = sol.rk2(TracerElements,FlowElements,curr_velocity,curr_position,0)
-	TracerElements = convert_from_array(FlowElements,TracerElements,new_position,'Tracer')
+
+	[new_tracer_position,new_element_position] = sol.euler(TracerElements,FlowElements,curr_velocity,curr_position)
+	
+	TracerElements = convert_from_array(FlowElements,TracerElements,new_tracer_position,'Tracer')
+	FlowElements = convert_from_array(FlowElements,TracerElements,new_element_position,'Elements')
 	
 	for j in range(len(TracerElements)):
-		location_tracer_time[t,j] = new_position[j][0]
+		location_tracer_time[t,j] = new_tracer_position[j][0]
+
+	location_flowelement_time[t,0] = new_element_position[0][0]
+
 
 	# TracerElements[j].velocity = compute_local_velocity(TracerElements[j].CurrentLocation,FlowElements,'Tracer')
 	# TracerElements[j].CurrentLocation = sol.rk2(TracerElements[j].velocity,TracerElements[j].CurrentLocation,0)
@@ -281,13 +305,13 @@ for t in range(nt):
 	# for j in range(len(FlowElements)):
 	# if FlowElements[j].__class__.__name__!='Uniform':
 	
-	curr_position = convert_to_array(FlowElements,TracerElements,'Elements')
-	curr_velocity = compute_local_velocity(TracerElements,FlowElements,1)
+	# curr_position = convert_to_array(FlowElements,TracerElements,'Elements')
+	# curr_velocity = compute_local_velocity(TracerElements,FlowElements,1)
 	# new_position = sol.euler(curr_velocity,curr_position)
-	new_position = sol.rk2(TracerElements,FlowElements,curr_velocity,curr_position,1)
-	FlowElements = convert_from_array(FlowElements,TracerElements,new_position,'Elements')
-	# for j in range(len(FlowElements)):
-	location_flowelement_time[t,0] = new_position[0][0]
+	# new_position = sol.rk2(TracerElements,FlowElements,curr_velocity,curr_position,1)
+	# FlowElements = convert_from_array(FlowElements,TracerElements,new_position,'Elements')
+	# # for j in range(len(FlowElements)):
+	# location_flowelement_time[t,0] = new_position[0][0]
 
 
 	# FlowElements[j].velocity = compute_local_velocity(FlowElements[j].CurrentLocation,FlowElements,'FlowElements')
