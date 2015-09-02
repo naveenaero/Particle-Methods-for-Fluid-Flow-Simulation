@@ -181,7 +181,7 @@ Body.set_nodes()
 Body.set_control_points()
 Body.compute_cp_normal()
 A = compute_geometry_matrix(Body)
-
+# print A
 
 
 tracer_initial_location = distribute_tracers(31,-3,2.5)
