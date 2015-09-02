@@ -4,14 +4,19 @@ from Geom import *
 
 
 dt = 0.05
-time_horizon = 6
+time_horizon = 10
 nt = int(time_horizon/dt)
 blob_flag = 0
 method = 'Panel'
+test_radius = radius + 0.01
 #rotation rate of cylinder
 omega = 0
 area = np.pi
 circulation = 2*area*omega/(math.sqrt(3))
+v_infinity = 0
+move_option = 0
+doublet_strength = 2*np.pi*radius**2*v_infinity*0
+vortex_strength = 1
 
 
 '''
@@ -65,7 +70,7 @@ class Solver:
 		return new_position[0],new_position[1];
 
 	#flag=0 Tracer and flag=1 FlowELement
-	def rk2(self,DummyTracers,DummyFlowElements,rhs,y0):
+	def rk2(self,DummyTracers,DummyFlowElements,rhs,y0,move_option,method):
 		#Tracer=0 Element=1
 		rhs_1 = []
 		rhs_2 = []
@@ -75,49 +80,47 @@ class Solver:
 		for j in range(len(rhs)):
 			rhs_1.append(rhs[j])
 			yprime.append(y0[j]+rhs_1[j]*self.dt)
-		
+	
 		for i in range(len(DummyTracers)):
 			DummyTracers[i].CurrentLocation = (yprime[0])[i]
 
-		for i in range(len(DummyFlowElements)):
-			DummyFlowElements[i].CurrentLocation = (yprime[1])[i]
-
-		solve_linear_system(DummyFlowElements,Panel)
+		if move_option:
+			for i in range(len(DummyFlowElements)):
+				DummyFlowElements[i].CurrentLocation = (yprime[1])[i]
 		
-		rhs_2.append(compute_local_velocity(DummyTracers,DummyFlowElements,0))
-		rhs_2.append(compute_local_velocity(DummyTracers,DummyFlowElements,1))
+		if method=='Panel':
+			solve_linear_system(DummyFlowElements,Panel)
+			rhs_2.append(body_local_velocity(DummyTracers,DummyFlowElements,0))
+			rhs_2.append(body_local_velocity(DummyTracers,DummyFlowElements,1))
+			new_position.append(y0[0] + (self.dt/2)*(rhs_1[0]+rhs_2[0]))
+			new_position.append(y0[1] + (self.dt/2)*(rhs_1[1]+rhs_2[1]))
+			return new_position[0],new_position[1]
+		elif method=="doublet_flow":
+			rhs_2.append(local_flow(DummyTracers,DummyFlowElements))
+			new_position.append(y0[0] + (self.dt/2)*(rhs_1[0]+rhs_2[0]))
+			return new_position[0]
 	
-		new_position.append(y0[0] + (self.dt/2)*(rhs_1[0]+rhs_2[0]))
-		new_position.append(y0[1] + (self.dt/2)*(rhs_1[1]+rhs_2[1]))
-	
-		return new_position[0],new_position[1]
-
+		else:
+			print "Wrong solution Method used"
+		
+		
 	def rk2_images(self,FlowElements,ImageVortex,ImageVortexNegative,rhs,y0):
 		rhs_1 = rhs
 		yprime = y0[0] + self.dt*rhs[0]
 
-		# yprime.append(y0[0] + self.dt*rhs[0])
-		# yprime.append(y0[1] + self.dt*rhs[1])
-
-
 		FlowElements[0].CurrentLocation = yprime[0]
-		# ImageVortex.CurrentLocation = yprime[1]
-		# ImageVortexNegative.CurrentLocation = complex(0,0)
-
+		
 		compute_image_vortex(FlowElements,ImageVortex,ImageVortexNegative)
 
 		v_FlowElement = compute_image_velocity(FlowElements,ImageVortex,ImageVortexNegative)
+		
 		rhs_2 = v_FlowElement
-		# rhs_2.append(v_ImageVortex)
-
 		out = []
+		
 		for i in range(len(rhs)):
 			out.append(y0[i] + (self.dt/2)*(rhs_1[i] + rhs_2[i]))
+		
 		return out
-
-
-
-
 
 
 
@@ -190,7 +193,7 @@ class Doublet:
 		self.CurrentLocation = InitialLocation
 	def field(self,Location):
 		dist = Location - self.CurrentLocation
-		return -self.strength/(2*np.pi*dist**2)
+		return np.conj(-self.strength/(2*np.pi*dist**2))
 
 class Uniform:
 	def __init__(self,strength,direction):
@@ -210,7 +213,7 @@ class Tracer:
 ###########################################################################################
 
 
-def compute_local_velocity(TracerElements,FlowElements,flag):
+def body_local_velocity(TracerElements,FlowElements,flag):
 	temp = complex(0,0)
 	if flag==0:
 		vel = np.zeros((len(TracerElements),1),dtype=complex)
@@ -227,7 +230,7 @@ def compute_local_velocity(TracerElements,FlowElements,flag):
 	else:
 		vel = np.zeros((len(FlowElements),1),dtype=complex)
 		for j in range(len(FlowElements)):
-			if FlowElements[j].__class__.__name__!='Uniform':
+			if FlowElements[j].__class__.__name__!='Uniform' :
 				location = FlowElements[j].CurrentLocation
 				for i in range(Body.n_panels):
 					vel[j] = vel[j] + Panel[i].get_velocity(location,i)
@@ -236,6 +239,18 @@ def compute_local_velocity(TracerElements,FlowElements,flag):
 						vel[j] = vel[j] + FlowElements[i].field()
 		return vel
 		
+
+###########################################################################################
+def local_flow(TracerElements,FlowElements):
+	velocity = np.zeros((len(TracerElements),1),dtype=complex)
+	for i in range(len(velocity)):
+		location = TracerElements[i].CurrentLocation
+		for j in range(len(FlowElements)):
+			if FlowElements[j].__class__.__name__=="Uniform":
+				velocity[i] += FlowElements[j].field()
+			else:
+				velocity[i] += FlowElements[j].field(location)
+	return velocity
 
 ###########################################################################################
 
@@ -274,6 +289,7 @@ def solve_linear_system(FlowElements,Panel):
 ###########################################################################################
 def compute_image_vortex(FlowElements,ImageVortex,ImageVortexNegative):
 	#radial location
+	
 	image_radial_location = 0
 	image_phase = 0
 	image_strength = 0
@@ -306,11 +322,8 @@ def compute_image_velocity(FlowElements,ImageVortex,ImageVortexNegative):
 		if FlowElements[i].__class__.__name__=='Vortex':
 			v_FlowElement.append(ImageVortex.field(FlowElements[i].CurrentLocation))
 			v_FlowElement[-1] += ImageVortexNegative.field(FlowElements[i].CurrentLocation)
-			# v_ImageVortex += FlowElements[i].field(ImageVortex.CurrentLocation)
-
-	# v_ImageVortex +=ImageVortexNegative.field(ImageVortex.CurrentLocation)
-	return v_FlowElement #,v_ImageVortex,v_ImageVortexNegative
-
+			
+	return v_FlowElement
 ###########################################################################################
 
 
@@ -318,10 +331,13 @@ def compute_image_velocity(FlowElements,ImageVortex,ImageVortexNegative):
 FlowElements = []
 # vortex_location = np.zeros((1),dtype=complex)
 
-vortex1 = Vortex(0,[complex(-1.25,0)],0.01,4)
-free_stream = Uniform(1,0)
+vortex1 = Vortex(vortex_strength,[complex(-1.25,0)],0.01,4)
+free_stream = Uniform(v_infinity,0)
+doublet1 = Doublet(doublet_strength,[complex(0,0)])
 FlowElements.append(vortex1)
 FlowElements.append(free_stream)
+FlowElements.append(doublet1)
+
 
 #Define Image Vortex and its counterpart at origin
 ImageVortex = Vortex(0,complex(0,0),0,0)
@@ -394,14 +410,14 @@ if method=='Panel':
 		
 		# for j in range(len(tracer_initial_location)):
 		curr_tracer_position = convert_to_array(FlowElements,TracerElements,'Tracer')
-		curr_tracer_velocity = compute_local_velocity(TracerElements,FlowElements,0)
+		curr_tracer_velocity = body_local_velocity(TracerElements,FlowElements,0)
 		curr_element_position = convert_to_array(FlowElements,TracerElements,'Elements')
-		curr_element_velocity = compute_local_velocity(TracerElements,FlowElements,1)
+		curr_element_velocity = body_local_velocity(TracerElements,FlowElements,1)
 
 		curr_position = [curr_tracer_position,curr_element_position]
 		curr_velocity = [curr_tracer_velocity,curr_element_velocity]
 		
-		[new_tracer_position,new_element_position] = sol.euler(TracerElements,FlowElements,curr_velocity,curr_position)
+		[new_tracer_position,new_element_position] = sol.rk2(TracerElements,FlowElements,curr_velocity,curr_position,move_option,method)
 		
 		TracerElements = convert_from_array(FlowElements,TracerElements,new_tracer_position,'Tracer')
 		FlowElements = convert_from_array(FlowElements,TracerElements,new_element_position,'Elements')
@@ -420,13 +436,39 @@ elif method=='images':
 		
 		v_FlowElement = compute_image_velocity(FlowElements,ImageVortex,ImageVortexNegative)
 		curr_velocity = v_FlowElement
+		print curr_velocity[0]
 		
 		new_position = sol.rk2_images(FlowElements,ImageVortex,ImageVortexNegative,curr_velocity,curr_position)
 
 		FlowElements[0].CurrentLocation = new_position[0]
-		location_vortex_image[t] = new_position[0][0]
+		location_flowelement_time[t,0] = new_position[0][0]
 		
 		compute_image_vortex(FlowElements,ImageVortex,ImageVortexNegative)
+
+elif method=='doublet_flow':
+	for t in range(nt):
+		if t%20==0:
+			print(str(int(100.0*t/nt))+"%........")
+
+		curr_tracer_position = convert_to_array(FlowElements,TracerElements,'Tracer')
+		curr_tracer_velocity = local_flow(TracerElements,FlowElements)
+		print curr_tracer_velocity
+		curr_velocity = [curr_tracer_velocity]
+		curr_position = [curr_tracer_position]
+
+		
+		new_tracer_position = sol.rk2(TracerElements,FlowElements,curr_velocity,curr_position,move_option,method)
+
+
+		TracerElements = convert_from_array(FlowElements,TracerElements,new_tracer_position,'Tracer')
+		# FlowElements = convert_from_array(FlowElements,TracerElements,new_element_position,'Elements')
+		
+		for j in range(len(TracerElements)):
+			location_tracer_time[t,j] = new_tracer_position[j][0]
+		
+		
+
+
 
 else:
 	print "Error -- no method mentioned!"
@@ -478,21 +520,24 @@ def plot_tracers(location_tracer_time,option):
 		plt.gca().set_aspect('equal',adjustable='box')
 		plt.xlim(-6,6)
 		plt.ylim(-6,6)
-		filename = "./pathlines.png"
+		filename = "./constant_panel.png"
 		plt.savefig(filename)
 		plt.clf()
 ###########################################################################################
 
 
-plot_tracers(location_tracer_time,'pathlines')
+# plot_tracers(location_tracer_time,'pathlines')
 
 
-# plt.plot(Body.nodes.real,Body.nodes.imag,linestyle='-')
-# plt.plot(location_vortex_image[-1].real,location_vortex_image[-1].imag,'o')
-# plt.gca().set_aspect('equal',adjustable='box')
-# plt.xlim(-6,6)
-# plt.ylim(-6,6)
-# plt.show()
+plt.plot(Body.nodes.real,Body.nodes.imag,linestyle='-')
+plt.plot(location_flowelement_time[:,0].real,location_flowelement_time[:,0].imag,linestyle='-')
+
+plt.plot(location_flowelement_time[-1,0].real,location_flowelement_time[-1,0].imag,'o')
+plt.gca().set_aspect('equal',adjustable='box')
+plt.xlim(-6,6)
+plt.ylim(-6,6)
+plt.savefig('./Panel_vortex.png')
+plt.show()
 
 
 
