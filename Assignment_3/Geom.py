@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 #body parameters
 radius = 1
 n_body_panels = 50
-panel_type = "constant"
+panel_type = 'constant'
 
 #boundary parameters
 side = 2
@@ -26,21 +26,22 @@ def dot_product(v1,v2):
 	dot = v1*np.conj(v2)
 	return dot.real
 
+
 class Geometry:
 	def __init__(self,n_panels,shape):
 		self.n_panels = n_panels
 		self.shape = shape
-
+		
 class BodyGeometry(Geometry):
-
-	def __init__(self,radius,n_panels,shape):
+	def __init__(self,radius,n_panels,shape,panel_type):
 		Geometry.__init__(self,n_panels,shape)
 		self.radius = radius
 		self.nodes = np.zeros((n_panels+1,1),dtype=complex)
 		self.cp = np.zeros((n_panels,1),dtype=complex)
 		self.normal = np.zeros((n_panels,1),dtype=complex)
 		self.cp_theta = np.zeros((n_panels,1))
-		
+		self.panel_type = panel_type
+
 	def set_nodes(self):
 		n_nodes = self.n_panels+1
 		theta = np.linspace(0,2*np.pi,n_nodes)
@@ -92,8 +93,8 @@ class BoundaryGeometry(Geometry):
 			self.normal[i] = complex(-panel_vec.imag,panel_vec.real)
 
 		
-def compute_gamma_coefficients(z,Body,k,option):
-	if option=='linear':
+def compute_gamma_coefficients(z,Body,k):
+	if Body.panel_type=='linear':
 		z1 = Body.nodes[k]
 		temp = Body.nodes[k+1]-Body.nodes[k]
 		theta = Body.cp_theta[k] + np.pi/2
@@ -111,7 +112,8 @@ def compute_gamma_coefficients(z,Body,k,option):
 		
 		return T1,T2
 
-	elif option=='constant':
+	elif Body.panel_type=='constant':
+		
 		z1 = Body.nodes[k]
 		temp = Body.nodes[k+1]-Body.nodes[k]
 		theta = Body.cp_theta[k] + np.pi/2
@@ -124,24 +126,27 @@ def compute_gamma_coefficients(z,Body,k,option):
 		b = cmath.log((a1/a2)[0])
 		c = cmath.exp(complex(0,theta))
 		d = complex(0,-1)/(2*np.pi)
-		T1 = np.conj(a1*b + 1)*c*d
-		T2 = -np.conj(a2*b + 1)*c*d
+		T1 = np.conj(b)*c*d
 		
-		return T1,T2
+		return T1
+
+	else:
+		print "Error -- Body Panel un-defined"
+
 
 			
 			
-def compute_geometry_matrix(Body,option):
+def compute_geometry_matrix(Body):
 	total_panels = Body.n_panels
 	A = np.zeros((total_panels+1,total_panels))
 
-	if option=="linear":
+	if Body.panel_type=="linear":
 		for i in range(total_panels):
 			z = Body.cp[i]
 			
 			for j in range(total_panels):
 
-				[P1,P2] = compute_gamma_coefficients(z,Body,j,option)
+				[P1,P2] = compute_gamma_coefficients(z,Body,j)
 				gamma_coeff1 = dot_product(P1,Body.cp[i])
 				gamma_coeff2 = dot_product(P2,Body.cp[i])
 				
@@ -154,45 +159,35 @@ def compute_geometry_matrix(Body,option):
 		A[-1,:] = 1
 		return A
 
-	elif option=="constant":
+	elif Body.panel_type=="constant":
 		for i in range(total_panels):
 			z = Body.cp[i]
-			
+
 			for j in range(total_panels):
 
-				P1 = compute_gamma_coefficients(z,Body,j,option)
+				P1 = compute_gamma_coefficients(z,Body,j)
 				gamma_coeff1 = dot_product(P1,Body.cp[i])
-				gamma_coeff2 = dot_product(P2,Body.cp[i])
 				
 				A[i,j] = A[i,j] + gamma_coeff1
-				if j+1<=Body.n_panels-1:
-					A[i,j+1] = A[i,j+1] + gamma_coeff2
-				else:
-					A[i,0] = A[i,0] + gamma_coeff2
-
+				
 		A[-1,:] = 1
 		return A
+	else:
+		print "Error -- Body Panel un-defined"
 
 
-Body = BodyGeometry(radius,n_body_panels,'circle')
+Body = BodyGeometry(radius,n_body_panels,'circle',panel_type)
 Body.set_nodes()
 Body.set_control_points()
 Body.compute_cp_normal()
 A = compute_geometry_matrix(Body)
 
 
-tracer_initial_location = distribute_tracers(31,-5,2.5)
+
+tracer_initial_location = distribute_tracers(31,-3,2.5)
 
 
-# plt.plot(Body.nodes.real,Body.nodes.imag,linestyle='-')
-# plt.plot(Body.cp.real,Body.cp.imag,'o')
-# plt.plot(Boundary.nodes.real,Boundary.nodes.imag,linestyle='-')
-# plt.plot(Boundary.cp.real,Boundary.cp.imag,'o')
 
-# plt.gca().set_aspect('equal',adjustable='box')
-# plt.xlim(-6,6)
-# plt.ylim(-6,6)
-# plt.show()
 
 
 

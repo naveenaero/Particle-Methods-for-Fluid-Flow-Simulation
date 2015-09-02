@@ -4,11 +4,11 @@ from Geom import *
 
 
 dt = 0.05
-time_horizon = 15
+time_horizon = 4
 nt = int(time_horizon/dt)
 blob_flag = 0
 #rotation rate of cylinder
-omega = 0
+omega = 5.57
 area = np.pi
 circulation = 2*area*omega/(math.sqrt(3))
 
@@ -97,8 +97,15 @@ class LineVortex:
 		self.gamma2 = gamma2
 
 	def get_velocity(self,location,panel_index):
-		[coeff_1,coeff_2] = compute_gamma_coefficients(location,Body,panel_index)
-		velocity = self.gamma1*coeff_1 + self.gamma2*coeff_2
+		if Body.panel_type=='linear':
+			[coeff_1,coeff_2] = compute_gamma_coefficients(location,Body,panel_index)
+			velocity = self.gamma1*coeff_1 + self.gamma2*coeff_2
+		elif Body.panel_type=='constant':
+			coeff_1 = compute_gamma_coefficients(location,Body,panel_index)
+			velocity = self.gamma1*coeff_1
+		else:
+			print "Error -- Body Panel un-defined"
+
 		return velocity
 
 ###########################################################################################
@@ -218,13 +225,19 @@ def solve_linear_system(FlowElements,Panel):
 	gamma = np.linalg.lstsq(A,b)
 	gamma = gamma[0]
 
-	
-	for i in range(Body.n_panels):
-		Panel[i].gamma1 = gamma[i]
-		if i+1<=Body.n_panels-1:
-			Panel[i].gamma2 = gamma[i+1]
-		else:
-			Panel[i].gamma2 = gamma[0]
+	if Body.panel_type=='linear':
+		for i in range(Body.n_panels):
+			Panel[i].gamma1 = gamma[i]
+			if i+1<=Body.n_panels-1:
+				Panel[i].gamma2 = gamma[i+1]
+			else:
+				Panel[i].gamma2 = gamma[0]
+	elif Body.panel_type=='constant':
+		for i in range(Body.n_panels):
+			Panel[i].gamma1 = gamma[i]
+			Panel[i].gamma2 = gamma[i]
+	else:
+		print "Error -- Body Panel un-defined"
 
 
 
@@ -256,9 +269,14 @@ b = np.zeros((Body.n_panels+1,1))
 
 #generate entries in b column vector based on flow elements present
 for i in range(Body.n_panels):
-	v = FlowElements[1].field()
+	v = complex(0,0)
+	for j in range(len(FlowElements)):
+		if FlowElements[j].__class__.__name__=='Uniform':
+			v = v + FlowElements[j].field()
+		else:
+			v = v + FlowElements[j].field(Body.cp[i])
 	b[i] = -1*dot_product(v,Body.cp[i])
-
+b[-1] = circulation
 
 #solve for Ax=b system of linear equations using
 #least squares estimation to get approximate gamma values
@@ -276,10 +294,16 @@ location_flowelement_time = np.zeros((nt,1),dtype=complex)
 Panel = []
 #Store Line Vortex elements in list using generated gamma values
 for i in range(Body.n_panels):
-	if i+1<=Body.n_panels-1:
-		Panel.append(LineVortex(gamma[i],gamma[i+1]))
+	if Body.panel_type=="linear":
+		if i+1<=Body.n_panels-1:
+			Panel.append(LineVortex(gamma[i],gamma[i+1]))
+		else:
+			Panel.append(LineVortex(gamma[i],gamma[0]))
+	elif Body.panel_type=="constant":
+		Panel.append(LineVortex(gamma[i],gamma[i]))
 	else:
-		Panel.append(LineVortex(gamma[i],gamma[0]))
+		print "Error -- Body Panel un-defined"
+
 ###########################################################################################
 
 #Solve for the time evolving system by running it in a loop over time and tracers for position update
@@ -287,6 +311,7 @@ for t in range(nt):
 	if t%20==0:
 		print(str(int(100.0*t/nt))+"%........")
 	solve_linear_system(FlowElements,Panel)
+	
 	# for j in range(len(tracer_initial_location)):
 	curr_tracer_position = convert_to_array(FlowElements,TracerElements,'Tracer')
 	curr_tracer_velocity = compute_local_velocity(TracerElements,FlowElements,0)
@@ -296,7 +321,7 @@ for t in range(nt):
 	curr_position = [curr_tracer_position,curr_element_position]
 	curr_velocity = [curr_tracer_velocity,curr_element_velocity]
 	
-	[new_tracer_position,new_element_position] = sol.rk2(TracerElements,FlowElements,curr_velocity,curr_position)
+	[new_tracer_position,new_element_position] = sol.euler(TracerElements,FlowElements,curr_velocity,curr_position)
 	
 	TracerElements = convert_from_array(FlowElements,TracerElements,new_tracer_position,'Tracer')
 	FlowElements = convert_from_array(FlowElements,TracerElements,new_element_position,'Elements')
