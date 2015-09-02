@@ -4,19 +4,56 @@ from Geom import *
 
 
 dt = 0.05
-time_horizon = 10
+time_horizon = dt
 nt = int(time_horizon/dt)
 blob_flag = 0
-method = 'Panel'
-test_radius = radius + 0.01
+method = 'doublet_flow'
+dr = 0.003 
 #rotation rate of cylinder
 omega = 0
 area = np.pi
 circulation = 2*area*omega/(math.sqrt(3))
-v_infinity = 0
+v_infinity = 1
 move_option = 0
-doublet_strength = 2*np.pi*radius**2*v_infinity*0
-vortex_strength = 1
+doublet_strength = 2*np.pi*radius**2*v_infinity*1
+vortex_strength = 0
+
+
+
+
+def error_check_points(Body,dr):
+	n_points = Body.n_panels*10
+	theta = np.linspace(0,np.pi,n_points)
+	check_points = np.zeros((n_points),dtype=complex)
+	check_point_velocity = np.zeros((n_points,2))
+	check_point_velocity[:,0] = theta
+	for i in range(n_points):
+		check_points[i] = (Body.radius+dr)*cmath.exp(1j*theta[i])
+		
+	return check_points,check_point_velocity
+
+
+[check_points,check_point_velocity] = error_check_points(Body,dr)
+
+def compute_border_velocity(check_points,check_point_velocity,Panel,method):
+	if method!='doublet_flow':
+		for i in range(len(check_points)):
+			vel = complex(0,0)
+			for j in range(Body.n_panels):
+				vel += Panel[j].get_velocity([check_points[i]],j)
+			vel += FlowElements[1].field()
+			check_point_velocity[i,1] = np.linalg.norm(vel)
+	else:
+		for j in range(len(check_points)):
+			vel = complex(0,0)
+			vel += FlowElements[1].field()
+			vel += FlowElements[2].field(check_points[j])
+			check_point_velocity[j,1] = np.linalg.norm(vel)
+			
+
+	return check_point_velocity
+		
+
 
 
 '''
@@ -400,12 +437,17 @@ for i in range(Body.n_panels):
 
 ###########################################################################################
 
+check_point_velocity = compute_border_velocity(check_points,check_point_velocity,Panel,method)
+# print check_point_velocity
+###########################################################################################
+
 #Solve for the time evolving system by running it in a loop over time and tracers for position update
 
 if method=='Panel':
 	for t in range(nt):
 		if t%20==0:
 			print(str(int(100.0*t/nt))+"%........")
+		
 		solve_linear_system(FlowElements,Panel)
 		
 		# for j in range(len(tracer_initial_location)):
@@ -452,7 +494,6 @@ elif method=='doublet_flow':
 
 		curr_tracer_position = convert_to_array(FlowElements,TracerElements,'Tracer')
 		curr_tracer_velocity = local_flow(TracerElements,FlowElements)
-		print curr_tracer_velocity
 		curr_velocity = [curr_tracer_velocity]
 		curr_position = [curr_tracer_position]
 
@@ -484,7 +525,7 @@ print "[DONE]"
 
 
 ###########################################################################################
-def plot_tracers(location_tracer_time,option):
+def plot_tracers(location_tracer_time,option,file_name):
 	if option=='movie':
 		theta = np.zeros((4,1))
 		radius_vector = np.zeros((4,2),dtype=complex)
@@ -520,25 +561,45 @@ def plot_tracers(location_tracer_time,option):
 		plt.gca().set_aspect('equal',adjustable='box')
 		plt.xlim(-6,6)
 		plt.ylim(-6,6)
-		filename = "./constant_panel.png"
+		plt.xlabel('X coordinate')
+		plt.ylabel('Y coordinate')
+		filename = "./"+file_name+".png"
 		plt.savefig(filename)
 		plt.clf()
+	else:
+		print "Wrong plotting option"
 ###########################################################################################
 
+def plot_general(location_flowelement_time,filename):
+	plt.plot(Body.nodes.real,Body.nodes.imag,linestyle='-')
+	plt.plot(location_flowelement_time[:,0].real,location_flowelement_time[:,0].imag,linestyle='-')
 
-# plot_tracers(location_tracer_time,'pathlines')
+	plt.plot(location_flowelement_time[-1,0].real,location_flowelement_time[-1,0].imag,'o')
+	plt.gca().set_aspect('equal',adjustable='box')
+	plt.xlim(-6,6)
+	plt.ylim(-6,6)
+	plt.savefig('./'+filename+'.png')
+	plt.show()
+
+def plot_border_velocity(check_point_velocity):
+	plt.plot(check_point_velocity[:,0],check_point_velocity[:,1],linestyle='-')
+	# plt.gca().set_aspect('equal',adjustable='box')
+	# plt.xlim(-2,2)
+	# plt.ylim(-1,1)
+	plt.show()
 
 
-plt.plot(Body.nodes.real,Body.nodes.imag,linestyle='-')
-plt.plot(location_flowelement_time[:,0].real,location_flowelement_time[:,0].imag,linestyle='-')
+plot_border_velocity(check_point_velocity)
+# plot_tracers(location_tracer_time,'pathlines','doublet_flow')
+# plot_general(location_flowelement_time,'image_method_Vortex')
 
-plt.plot(location_flowelement_time[-1,0].real,location_flowelement_time[-1,0].imag,'o')
-plt.gca().set_aspect('equal',adjustable='box')
-plt.xlim(-6,6)
-plt.ylim(-6,6)
-plt.savefig('./Panel_vortex.png')
-plt.show()
+# location_info = np.zeros((nt,2))
+# for i in range(nt):
+# 	location_info[i,0] = np.linalg.norm(location_flowelement_time[i,0])
+# 	location_info[i,1] = cmath.phase(location_flowelement_time[i,0])
+# np.savetxt("images_method_Vortex.csv", location_info, delimiter=",")
 
 
 
+np.savetxt("15.csv", check_point_velocity, delimiter=",")
 

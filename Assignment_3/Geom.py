@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 #body parameters
 radius = 1
 n_body_panels = 50
-panel_type = 'linear'
+panel_type = 'constant'
 
 #boundary parameters
 side = 2
@@ -184,7 +184,7 @@ A = compute_geometry_matrix(Body)
 # print A
 
 
-tracer_initial_location = distribute_tracers(31,-3,2.5)
+tracer_initial_location = distribute_tracers(41,-3,2.5)
 
 
 
