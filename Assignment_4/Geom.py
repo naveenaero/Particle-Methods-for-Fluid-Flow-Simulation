@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 #body parameters
 radius = 1
-n_body_panels = 50
+n_body_panels = 6
 panel_type = 'linear'
 
 #boundary parameters
