@@ -1,10 +1,12 @@
 import numpy as np
 import math
 from itertools import compress
+import time
+start_time = time.time()
 from Geom import *
 
 
-dt = 0.075
+dt = 0.1
 time_horizon = 3
 nt = int(time_horizon/dt)
 v_infinity = 1
@@ -29,8 +31,7 @@ def test_no_penetration():
     
 def test_single_vortex_motion(flow_elements):
     flow_elements.append(Vortex(1, complex(-1.25,0), 0.01, 'bo'))
-    # flow_elements.append(Vortex(1, complex(-1.5,0), 0.01, 'ro'))
-
+    
 ###########################################################################################
 
 def get_position_array(flow_elements):
@@ -58,25 +59,13 @@ class Solver:
     def rk2(self, dummy_flow_elements, panel, rhs, y0):
         rhs_1 = rhs
         
-
         yprime = y0 + rhs_1*self.dt
         
         for i in range(len(flow_elements)):
             dummy_flow_elements[i].current_location = yprime[i]
         
-        # dummy_panel=np.zeros(len(panel))
-        # for i in range(len(panel)):
-        # 	dummy_panel[i]=panel[i].gamma1
-        
-        # print dummy_panel[0],panel[0].gamma1
-        panel = solve_panel_method(flow_elements, panel)
+        panel = solve_panel_method(dummy_flow_elements, panel)
         rhs_2 = compute_flowelement_velocity(dummy_flow_elements, panel)
-        
-        
-        # for i in range(len(dummy_panel)):
-        	# panel[i].gamma1=dummy_panel[i]
-        
-        # print dummy_panel[0],panel[0].gamma1
         
         return y0 + (self.dt/2)*(rhs_1 + rhs_2)
     
@@ -100,8 +89,7 @@ class LineVortex:
             print "Error -- body panel un-defined"
 
         return velocity
-
-    
+   
 class Vortex:
     
     def __init__(self, strength, initial_location, blob_radius, color):
@@ -188,48 +176,44 @@ def compute_panel_field(panel, location):
 
 ###########################################################################################
 
-def compute_near_velocity(flow_elements, t):
-    # location = np.zeros(nx*ny,dtype=complex)
-    nx,ny = 40,40
-    y,x = np.mgrid[-2:2:40j, -2:2:40j]
-    # velocity = np.zeros((nx,ny),dtype=complex)
+def plot_quiver(flow_elements, t):
+    nx,ny = 30,30
+    y,x = np.mgrid[-2:3:nx*1j, -2:3:ny*1j]
     U = np.zeros((nx,ny));
     V = np.zeros((nx,ny));
     for i in range(ny):
         for j in range(nx):
             location = complex(x[i,j],y[i,j])
-            # print location
             temp = compute_total_velocity(body, flow_elements, panel, location)
             U[i,j] = temp.real
             V[i,j] = temp.imag
 
 
-    print np.shape(U)
-    # print np.asarray(velocity.real)
-   	# U = velocity.real
-   	# V = velocity.imag
     plt.plot(body.nodes.real, body.nodes.imag, linestyle='-')
-    plt.streamplot(x, y, U, V, color=U, linewidth=2, cmap=plt.cm.autumn)
-    plt.colorbar()
-    # plt.quiver(location.real, location.imag, velocity.real, velocity.imag)
+    plt.quiver(x, y, U, V)
     
     plt.gca().set_aspect('equal', adjustable='box')
-    plt.xlim(-1.5, 3)
-    plt.ylim(-1.5, 1.5)
-    filename = "./Velocity_field/%04d.png" %(t)
+    plt.xlim(-2, 3)
+    plt.ylim(-2, 3)
+    title = "Velocity field at %f  seconds" % (t*dt)
+    plt.title(title)
+    plt.xlabel(r"X",fontsize=15)
+    plt.ylabel(r"Y",fontsize=15)
+    filename = "./final_case_1/velocity_field/%04d.png" %(t/13)
     plt.savefig(filename)
     plt.clf()
-    # plt.show()
+    
 
 ###########################################################################################
 def solve_linear_system(flow_elements):
     b = np.zeros(body.n_panels+1)
     for i in range(body.n_panels):
         v = complex(0,0)
-        v = compute_vortex_field(flow_elements, body.cp[i]) + free_stream.field()
+        location = (np.abs(body.cp[i])+1e-6)
+        v = compute_vortex_field(flow_elements, location) + free_stream.field()
         b[i] = -1*dot_product(v, body.cp[i])
 
-    b[-1] = circulation
+    b[-1] = 0
     
     gamma = np.linalg.lstsq(A, b)
     gamma = gamma[0]
@@ -273,7 +257,6 @@ def compute_total_velocity(body, flow_elements, panel, location):
     total_velocity += free_stream.field()
     total_velocity += compute_vortex_field(flow_elements, location)
     total_velocity += compute_panel_field(panel, location)
-	# total_velocity += image_vortex.blob_field(location)
     return total_velocity
 
 ###########################################################################################
@@ -291,38 +274,41 @@ def compute_slip(body, flow_elements, panel):
     slip_velocity = np.zeros(body.n_panels)
     for i in range(body.n_panels):
         total_velocity = complex(0,0)
-        location = (1)*cmath.exp(body.cp_theta[i]*1j)
-        # location = body.cp[i]
-        total_velocity = compute_total_velocity(body, flow_elements, panel, location)
+        location = (np.abs(body.cp[0])+1e-6)*np.exp(body.cp_theta[i]*1j)
+       	total_velocity = compute_total_velocity(body, flow_elements, panel, location)
         slip_velocity[i] = dot_product(total_velocity,body.tangent[i])
     return slip_velocity
 
 ###########################################################################################
 
-def distribute_vortex_blobs(body, flow_elements, slip_velocity):
+def distribute_vortex_blobs(body, panel, flow_elements, slip_velocity):
     blob_radius = body.panel_length/np.pi
-    blob_radial_pos = np.linalg.norm(1) + blob_radius
-    image_blob_strength = 0
     for i in range(body.n_panels):
         new_blobs = []
-        blob_strength_max = 0.1
-        color = 'ro'
-        blob_strength = slip_velocity[i]*body.panel_length
-        image_blob_strength += blob_strength
-        if blob_strength<0:
-            blob_strength_max *= -1
-            color = 'bo'
-        blob_theta = body.cp_theta[i]
-        blob_position = blob_radial_pos*cmath.exp(blob_theta*1j)
-        blob_quant = int(abs(blob_strength/blob_strength_max))
+        blob_quant = 0
+        gamma = 0
+        remaining_strength = 0
+        blob_position = (np.abs(body.cp[i]) + 1e-6 + blob_radius)*np.exp(body.cp_theta[i]*1j)
+        
+        if slip_velocity[i]<0:
+        	gamma_max = -0.1
+        	color = 'bo'
+        else:
+        	gamma_max = 0.1
+        	color = 'ro'
+        
+        blob_quant = int(abs(slip_velocity[i]/gamma_max))
+        gamma = gamma_max*body.panel_length
+
+        
 
         for j in range(blob_quant):
-            new_blobs.append(Vortex(blob_strength_max, blob_position, blob_radius, color))
-        remaining_strength = blob_strength - blob_quant*blob_strength_max
-        new_blobs.append(Vortex(remaining_strength, blob_position, blob_radius, color))
+            new_blobs.append(Vortex(gamma, blob_position, blob_radius, color))
+        if blob_quant==0:
+	        remaining_strength = slip_velocity[i]*body.panel_length - gamma*blob_quant
+	        new_blobs.append(Vortex(remaining_strength, blob_position, blob_radius, color))
         
         flow_elements += new_blobs
-    # print image_blob_strength
 ###########################################################################################
 
 def diffuse(flow_elements):
@@ -335,23 +321,21 @@ def diffuse(flow_elements):
 ###########################################################################################
 
 def mirror(current_positions):
-    check_location = np.abs(current_positions)<np.abs(body.radius)
-    particles_outside = list(compress(xrange(len(check_location)), check_location))
-    
-    if len(particles_outside)!=0:
-        for item in particles_outside:
-            old_radius = np.abs(current_positions[item])
-            old_theta = cmath.phase(current_positions[item])
-            
-            new_radius = old_radius + 2*(body.radius-old_radius)
-            new_theta = old_theta
-            
-            current_positions[item] = new_radius*cmath.exp(new_theta*1j)
-    return current_positions
-
+	reflection_radius = np.abs(body.radius+1e-6)
+	check_location = np.abs(current_positions)<reflection_radius
+	particles_outside = list(compress(xrange(len(check_location)), check_location))
+	if len(particles_outside)!=0:
+		for item in particles_outside:
+			old_radius = np.abs(current_positions[item])
+			old_theta = cmath.phase(current_positions[item])
+			new_radius = old_radius + 2*(reflection_radius-old_radius)
+			new_theta = old_theta
+			current_positions[item] = new_radius*cmath.exp(new_theta*1j)
+	return current_positions
+   
 ###########################################################################################
 
-def plot_particles(flow_elements, t):
+def plot_particles(flow_elements, t, file_factor):
     plt.plot(body.nodes.real, body.nodes.imag,'k-')
     for i in range(len(flow_elements)):
         plt.plot(flow_elements[i].current_location.real, flow_elements[i].current_location.imag,flow_elements[i].color,markersize=2)
@@ -359,11 +343,30 @@ def plot_particles(flow_elements, t):
     plt.gca().set_aspect('equal', adjustable='box')
     plt.xlim(-2, 6)
     plt.ylim(-2, 2)
-    filename = "./Case_2/%04d.png" % (t)
+    title = "Particle positions at %f seconds" % (t*dt)
+    plt.title(title)
+    plt.xlabel(r"X",fontsize=15)
+    plt.ylabel(r"Y",fontsize=15)
+    filename = "./final_case_1/particles/%04d.png" % (t/file_factor)
     plt.savefig(filename)
     plt.clf()
 
 ###########################################################################################
+
+def plot_drag(drag):
+	time = np.zeros(len(drag))
+	D = np.zeros(len(drag))
+	for i in range(len(drag)):
+		time[i] = drag[i][0]
+		D[i] = drag[i][1]
+	plt.plot(time,D)
+	plt.xlabel(r"$Time(s)$",fontsize=12)
+	plt.ylabel(r"$C_d$",fontsize=15)
+	plt.title(r"$Drag\ Coefficient(C_d)\ vs\ Time$")
+	plt.savefig("./final_case_1/Drag.png")
+
+###########################################################################################
+
 
 def solve_panel_method(flow_elements, panel):
     gamma = solve_linear_system(flow_elements)
@@ -375,70 +378,78 @@ def solve_panel_method(flow_elements, panel):
 def convect(flow_elements, panel):
     flow_element_velocity = compute_flowelement_velocity(flow_elements, panel)
     flow_element_position = get_position_array(flow_elements)
-    # print "before:",panel[0].gamma1
     new_flow_element_position = sol.rk2(flow_elements, panel, flow_element_velocity, flow_element_position)
-    # print "Afer:",panel[0].gamma1
     store_positions(flow_elements, new_flow_element_position)
 
 ###########################################################################################
 
-def compute_vortex_momentum(flow_elements, vortex_momentum):
-	particle_momentum = 0
+def compute_vortex_momentum(flow_elements, vortex_momentum, t):
+	particle_momentum = complex(0,0)
 	for vortex in flow_elements:
 		particle_momentum += vortex.strength*complex(vortex.current_location.imag,-vortex.current_location.real)
 	particle_momentum *= rho
-	vortex_momentum.append(particle_momentum)
+	vortex_momentum.append([t*dt,particle_momentum])
 
 ###########################################################################################
 
 def compute_drag_force(vortex_momentum):
-	return 0;
+	new_momentum = []
+	n_avg = 1
+	for i in range(0,len(vortex_momentum),n_avg):
+		momentum = complex(0,0)
+		time = 0
+		for j in range(i,i+n_avg):
+			momentum += vortex_momentum[j][1]
+			time += vortex_momentum[j][0]
+		momentum /= n_avg
+		time /= n_avg
+		new_momentum.append([time,momentum])
+	drag = []
+	for i in range(len(new_momentum)-1):
+		dt = new_momentum[i+1][0] - new_momentum[i][0]
+		di = (new_momentum[i+1][1] - new_momentum[i][1])
+		drag.append([new_momentum[i][0],abs(-di/dt)])
+	return drag
+	
 
 ###########################################################################################
 def solve_flow(flow_elements, panel):
     for t in range(nt):
-        if t%20==0:
+        if t%10==0:
             print(str(int(100.0*t/nt))+"%........")
 
+
+        print "###############################"
+        print "Time:",t*dt,", Number of Blobs:",len(flow_elements)
+        print "###############################"
+        
         #Solve Panel Method for no-penetration
         panel = solve_panel_method(flow_elements, panel)
 
-        # total_gamma = image_vortex.strength
-        # for item in panel:
-        # 	total_gamma += item.gamma1
-        # for item in flow_elements:
-        # 	total_gamma += item.strength
-        # print total_gamma
-
-        
-
         #compute and store slip velocity at the control points
         slip_velocity = compute_slip(body, flow_elements, panel)
-        # print slip_velocity
+        
+		#plot the quiver plot of velocity
+        if t==nt-1:
+        	plot_quiver(flow_elements, t)
+
+        # plot the particles at every time step
+        file_factor = 5
+       	if (t+1)%file_factor==0:
+	        plot_particles(flow_elements, t, file_factor)
 
         #convect the flow elements
         convect(flow_elements, panel)
         
-        #plot the quiver plot of velocity
-        # compute_near_velocity(flow_elements, t)
-
-
-        #distribute vortex blobs at the control points
-        distribute_vortex_blobs(body, flow_elements, slip_velocity)
-        print t, len(flow_elements)
+		#distribute vortex blobs at the control points
+        distribute_vortex_blobs(body, panel, flow_elements, slip_velocity)
         
         #Diffuse all the flow elements
         diffuse(flow_elements)
 
        	#Calculate vortex momentum
-       	# compute_vortex_momentum(flow_elements, vortex_momentum)
-       	# print vortex_momentum
-        
-        #plot the particles at every time step
-        plot_particles(flow_elements, t)
-
-        
-        
+       	compute_vortex_momentum(flow_elements, vortex_momentum, t)
+       	
     print "[DONE]"
     
 ###########################################################################################
@@ -447,7 +458,6 @@ def solve_flow(flow_elements, panel):
 flow_elements = []
 vortex_momentum = []
 free_stream = Uniform(v_infinity,0)
-# image_vortex = Vortex(0,complex(0,0),0.04,'bo')
 
 ###########################################################################################
 
@@ -459,11 +469,15 @@ sol = Solver(dt)
 #initiate panels
 panel = init_panels(flow_elements)
 
-
 ###########################################################################################
-# test_single_vortex_motion(flow_elements)
 #Solve for the time evolving system
 solve_flow(flow_elements, panel)
+
+###########################################################################################
+#Compute and plot drag
+drag = compute_drag_force(vortex_momentum)
+plot_drag(drag)
+print("--- %s seconds ---" % (time.time() - start_time))
 
 ###########################################################################################
 
@@ -510,6 +524,7 @@ def plot_tracers(location_tracer_time, option, file_name):
         plt.clf()
     else:
         print "Wrong plotting option"
+
 ###########################################################################################
 
 def plot_general(location_flowelement_time, filename):
