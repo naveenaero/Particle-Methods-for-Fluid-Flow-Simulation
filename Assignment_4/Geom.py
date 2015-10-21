@@ -1,7 +1,7 @@
 import numpy as np
 import cmath
 import math
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 #body parameters
 radius = 1
@@ -198,6 +198,8 @@ def init_body(panel_type, radius, n_body_panels):
 
 
 [body, A] = init_body(panel_type, radius, n_body_panels)
+
+
 
 
 

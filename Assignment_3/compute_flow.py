@@ -4,25 +4,28 @@ from Geom import *
 
 
 dt = 0.05
-time_horizon = dt
+time_horizon = 5
 nt = int(time_horizon/dt)
 blob_flag = 0
-method = 'doublet_flow'
-dr = 0.003
+method = 'Panel'
+dr = 0.01
 #rotation rate of cylinder
 omega = 0
 area = np.pi
 circulation = 2*area*omega/(math.sqrt(3))
 v_infinity = 1
 move_option = 0
-doublet_strength = 2*np.pi*radius**2*v_infinity*1
+doublet_strength = 2*np.pi*radius**2*v_infinity*0
 vortex_strength = 0
 
 
 
 
+
+
+
 def error_check_points(Body,dr):
-	n_points = Body.n_panels*10
+	n_points = Body.n_panels*1
 	theta = np.linspace(0,np.pi,n_points)
 	check_points = np.zeros((n_points),dtype=complex)
 	check_point_velocity = np.zeros((n_points,2))
@@ -41,7 +44,9 @@ def compute_border_velocity(check_points,check_point_velocity,Panel,method):
 			vel = complex(0,0)
 			for j in range(Body.n_panels):
 				vel += Panel[j].get_velocity([check_points[i]],j)
-			vel += FlowElements[1].field()
+				# print Panel[j].gamma1, j
+			vel += FlowElements[1].field()*0
+			print vel
 			check_point_velocity[i,1] = np.linalg.norm(vel)
 	else:
 		for j in range(len(check_points)):
@@ -406,6 +411,7 @@ for i in range(Body.n_panels):
 		else:
 			v = v + FlowElements[j].field(Body.cp[i])
 	b[i] = -1*dot_product(v,Body.cp[i])
+	
 b[-1] = circulation
 
 #solve for Ax=b system of linear equations using
@@ -435,6 +441,10 @@ for i in range(Body.n_panels):
 	else:
 		print "Error -- Body Panel un-defined"
 
+
+
+
+
 ###########################################################################################
 
 check_point_velocity = compute_border_velocity(check_points,check_point_velocity,Panel,method)
@@ -449,6 +459,11 @@ if method=='Panel':
 			print(str(int(100.0*t/nt))+"%........")
 		
 		solve_linear_system(FlowElements,Panel)
+
+
+		check_point_velocity = compute_border_velocity(check_points,check_point_velocity,Panel,method)
+		# print check_point_velocity
+		assert (1==0), "Stop!"
 		
 		# for j in range(len(tracer_initial_location)):
 		curr_tracer_position = convert_to_array(FlowElements,TracerElements,'Tracer')
@@ -456,6 +471,8 @@ if method=='Panel':
 		curr_element_position = convert_to_array(FlowElements,TracerElements,'Elements')
 		curr_element_velocity = body_local_velocity(TracerElements,FlowElements,1)
 
+		
+		# print (curr_tracer_velocity[21])
 		curr_position = [curr_tracer_position,curr_element_position]
 		curr_velocity = [curr_tracer_velocity,curr_element_velocity]
 		
@@ -478,7 +495,6 @@ elif method=='images':
 		
 		v_FlowElement = compute_image_velocity(FlowElements,ImageVortex,ImageVortexNegative)
 		curr_velocity = v_FlowElement
-		print curr_velocity[0]
 		
 		new_position = sol.rk2_images(FlowElements,ImageVortex,ImageVortexNegative,curr_velocity,curr_position)
 
@@ -589,9 +605,9 @@ def plot_border_velocity(check_point_velocity):
 	plt.show()
 
 
-plot_border_velocity(check_point_velocity)
-# plot_tracers(location_tracer_time,'pathlines','doublet_flow')
-# plot_general(location_flowelement_time,'image_method_Vortex')
+# plot_border_velocity(check_point_velocity)
+# plot_tracers(location_tracer_time,'pathlines','panel_linear')
+plot_general(location_flowelement_time,'Hello')
 
 # location_info = np.zeros((nt,2))
 # for i in range(nt):

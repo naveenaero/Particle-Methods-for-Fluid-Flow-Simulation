@@ -7,7 +7,7 @@ from Geom import *
 
 
 dt = 0.1
-time_horizon = 3
+time_horizon = 1
 nt = int(time_horizon/dt)
 v_infinity = 1
 rho = 1
@@ -16,7 +16,6 @@ mean = 0
 Re = 1000.0
 viscosity = rho*v_infinity*2*body.radius/Re
 sigma = math.sqrt(2*viscosity*dt)
-
 
 
 
@@ -64,7 +63,9 @@ class Solver:
         for i in range(len(flow_elements)):
             dummy_flow_elements[i].current_location = yprime[i]
         
-        panel = solve_panel_method(dummy_flow_elements, panel)
+        dummy_freestream_vortex_field = compute_freestream_vortex_field(dummy_flow_elements)
+
+        panel = solve_panel_method(panel, dummy_freestream_vortex_field)
         rhs_2 = compute_flowelement_velocity(dummy_flow_elements, panel)
         
         return y0 + (self.dt/2)*(rhs_1 + rhs_2)
@@ -176,41 +177,40 @@ def compute_panel_field(panel, location):
 
 ###########################################################################################
 
-def plot_quiver(flow_elements, t):
-    nx,ny = 30,30
-    y,x = np.mgrid[-2:3:nx*1j, -2:3:ny*1j]
-    U = np.zeros((nx,ny));
-    V = np.zeros((nx,ny));
-    for i in range(ny):
-        for j in range(nx):
-            location = complex(x[i,j],y[i,j])
-            temp = compute_total_velocity(body, flow_elements, panel, location)
-            U[i,j] = temp.real
-            V[i,j] = temp.imag
+# def plot_quiver(flow_elements, t):
+#     nx,ny = 30,30
+#     y,x = np.mgrid[-2:3:nx*1j, -2:3:ny*1j]
+#     U = np.zeros((nx,ny));
+#     V = np.zeros((nx,ny));
+#     for i in range(ny):
+#         for j in range(nx):
+#             location = complex(x[i,j],y[i,j])
+#             temp = compute_total_velocity(body, flow_elements, panel, location)
+#             U[i,j] = temp.real
+#             V[i,j] = temp.imag
 
 
-    plt.plot(body.nodes.real, body.nodes.imag, linestyle='-')
-    plt.quiver(x, y, U, V)
+#     plt.plot(body.nodes.real, body.nodes.imag, linestyle='-')
+#     plt.quiver(x, y, U, V)
     
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.xlim(-2, 3)
-    plt.ylim(-2, 3)
-    title = "Velocity field at %f  seconds" % (t*dt)
-    plt.title(title)
-    plt.xlabel(r"X",fontsize=15)
-    plt.ylabel(r"Y",fontsize=15)
-    filename = "./final_case_1/velocity_field/%04d.png" %(t/13)
-    plt.savefig(filename)
-    plt.clf()
+#     plt.gca().set_aspect('equal', adjustable='box')
+#     plt.xlim(-2, 3)
+#     plt.ylim(-2, 3)
+#     title = "Velocity field at %f  seconds" % (t*dt)
+#     plt.title(title)
+#     plt.xlabel(r"X",fontsize=15)
+#     plt.ylabel(r"Y",fontsize=15)
+#     filename = "./final_case_1/velocity_field/%04d.png" %(t/13)
+#     plt.savefig(filename)
+#     plt.clf()
     
 
 ###########################################################################################
-def solve_linear_system(flow_elements):
+def solve_linear_system(freestream_vortex_field):
     b = np.zeros(body.n_panels+1)
     for i in range(body.n_panels):
-        v = complex(0,0)
         location = (np.abs(body.cp[i])+1e-6)
-        v = compute_vortex_field(flow_elements, location) + free_stream.field()
+        v = freestream_vortex_field[i]
         b[i] = -1*dot_product(v, body.cp[i])
 
     b[-1] = 0
@@ -235,9 +235,9 @@ def reset_panels(panel, gamma):
         print "Error -- body panel un-defined"
     return panel
 
-def init_panels(flow_elements):
+def init_panels(freestream_vortex_field):
     panel = []
-    gamma = solve_linear_system(flow_elements)
+    gamma = solve_linear_system(freestream_vortex_field)
     for i in range(body.n_panels):
         if body.panel_type=="linear":
             if i+1<=body.n_panels-1:
@@ -270,12 +270,12 @@ def compute_flowelement_velocity(flow_elements, panel):
 
 ###########################################################################################
 
-def compute_slip(body, flow_elements, panel):
+def compute_slip(body, panel, freestream_vortex_field):
     slip_velocity = np.zeros(body.n_panels)
     for i in range(body.n_panels):
         total_velocity = complex(0,0)
         location = (np.abs(body.cp[0])+1e-6)*np.exp(body.cp_theta[i]*1j)
-       	total_velocity = compute_total_velocity(body, flow_elements, panel, location)
+       	total_velocity = freestream_vortex_field[i] + compute_panel_field(panel, location)
         slip_velocity[i] = dot_product(total_velocity,body.tangent[i])
     return slip_velocity
 
@@ -283,6 +283,7 @@ def compute_slip(body, flow_elements, panel):
 
 def distribute_vortex_blobs(body, panel, flow_elements, slip_velocity):
     blob_radius = body.panel_length/np.pi
+
     for i in range(body.n_panels):
         new_blobs = []
         blob_quant = 0
@@ -297,18 +298,21 @@ def distribute_vortex_blobs(body, panel, flow_elements, slip_velocity):
         	gamma_max = 0.1
         	color = 'ro'
         
+
         blob_quant = int(abs(slip_velocity[i]/gamma_max))
+        
         gamma = gamma_max*body.panel_length
 
         
 
         for j in range(blob_quant):
             new_blobs.append(Vortex(gamma, blob_position, blob_radius, color))
-        if blob_quant==0:
-	        remaining_strength = slip_velocity[i]*body.panel_length - gamma*blob_quant
-	        new_blobs.append(Vortex(remaining_strength, blob_position, blob_radius, color))
+        # if (slip_velocity[i])-(blob_quant*gamma_max)!=0:
+	       #  remaining_strength = (slip_velocity[i] - gamma_max*blob_quant)*body.panel_length
+	       #  new_blobs.append(Vortex(remaining_strength, blob_position, blob_radius, color))
         
         flow_elements += new_blobs
+
 ###########################################################################################
 
 def diffuse(flow_elements):
@@ -335,41 +339,51 @@ def mirror(current_positions):
    
 ###########################################################################################
 
-def plot_particles(flow_elements, t, file_factor):
-    plt.plot(body.nodes.real, body.nodes.imag,'k-')
-    for i in range(len(flow_elements)):
-        plt.plot(flow_elements[i].current_location.real, flow_elements[i].current_location.imag,flow_elements[i].color,markersize=2)
-
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.xlim(-2, 6)
-    plt.ylim(-2, 2)
-    title = "Particle positions at %f seconds" % (t*dt)
-    plt.title(title)
-    plt.xlabel(r"X",fontsize=15)
-    plt.ylabel(r"Y",fontsize=15)
-    filename = "./final_case_1/particles/%04d.png" % (t/file_factor)
-    plt.savefig(filename)
-    plt.clf()
+def compute_freestream_vortex_field(flow_elements):
+	other_velocity = np.zeros(body.n_panels,dtype=complex)
+	for i in range(body.n_panels):
+		location = (np.abs(body.cp[i])+1e-6)*np.exp(body.cp_theta[i]*1j)
+		other_velocity[i] = compute_vortex_field(flow_elements, location)
+		other_velocity[i] += free_stream.field()
+	return other_velocity
 
 ###########################################################################################
 
-def plot_drag(drag):
-	time = np.zeros(len(drag))
-	D = np.zeros(len(drag))
-	for i in range(len(drag)):
-		time[i] = drag[i][0]
-		D[i] = drag[i][1]
-	plt.plot(time,D)
-	plt.xlabel(r"$Time(s)$",fontsize=12)
-	plt.ylabel(r"$C_d$",fontsize=15)
-	plt.title(r"$Drag\ Coefficient(C_d)\ vs\ Time$")
-	plt.savefig("./final_case_1/Drag.png")
+# def plot_particles(flow_elements, t, file_factor):
+#     plt.plot(body.nodes.real, body.nodes.imag,'k-')
+#     for i in range(len(flow_elements)):
+#         plt.plot(flow_elements[i].current_location.real, flow_elements[i].current_location.imag,flow_elements[i].color,markersize=2)
+
+#     plt.gca().set_aspect('equal', adjustable='box')
+#     plt.xlim(-2, 6)
+#     plt.ylim(-2, 2)
+#     title = "Particle positions at %f seconds" % (t*dt)
+#     plt.title(title)
+#     plt.xlabel(r"X",fontsize=15)
+#     plt.ylabel(r"Y",fontsize=15)
+#     filename = "./final_case_1/particles/%04d.png" % (t/file_factor)
+#     plt.savefig(filename)
+#     plt.clf()
+
+###########################################################################################
+
+# def plot_drag(drag):
+# 	time = np.zeros(len(drag))
+# 	D = np.zeros(len(drag))
+# 	for i in range(len(drag)):
+# 		time[i] = drag[i][0]
+# 		D[i] = drag[i][1]
+# 	plt.plot(time,D)
+# 	plt.xlabel(r"$Time(s)$",fontsize=12)
+# 	plt.ylabel(r"$C_d$",fontsize=15)
+# 	plt.title(r"$Drag\ Coefficient(C_d)\ vs\ Time$")
+# 	plt.savefig("./final_case_1/Drag.png")
 
 ###########################################################################################
 
 
-def solve_panel_method(flow_elements, panel):
-    gamma = solve_linear_system(flow_elements)
+def solve_panel_method(panel, freestream_vortex_field):
+    gamma = solve_linear_system(freestream_vortex_field)
     panel = reset_panels(panel, gamma)
     return panel
 
@@ -423,31 +437,38 @@ def solve_flow(flow_elements, panel):
         print "Time:",t*dt,", Number of Blobs:",len(flow_elements)
         print "###############################"
         
-        #Solve Panel Method for no-penetration
-        panel = solve_panel_method(flow_elements, panel)
-
-        #compute and store slip velocity at the control points
-        slip_velocity = compute_slip(body, flow_elements, panel)
+        freestream_vortex_field = compute_freestream_vortex_field(flow_elements)
         
-		#plot the quiver plot of velocity
-        if t==nt-1:
-        	plot_quiver(flow_elements, t)
+        #Solve Panel Method for no-penetration
+        panel = solve_panel_method(panel, freestream_vortex_field)
 
-        # plot the particles at every time step
-        file_factor = 5
-       	if (t+1)%file_factor==0:
-	        plot_particles(flow_elements, t, file_factor)
+        
+        #compute and store slip velocity at the control points
+        slip_velocity = compute_slip(body, panel, freestream_vortex_field)
+        
+        
+        #plot the quiver plot of velocity
+        # if t==nt-1:
+        # 	plot_quiver(flow_elements, t)
 
+        
         #convect the flow elements
         convect(flow_elements, panel)
         
 		#distribute vortex blobs at the control points
         distribute_vortex_blobs(body, panel, flow_elements, slip_velocity)
         
+        
         #Diffuse all the flow elements
         diffuse(flow_elements)
 
-       	#Calculate vortex momentum
+        
+        # plot the particles at every time step
+        # file_factor = 1
+       	# if (t+1)%file_factor==0:
+	       #  plot_particles(flow_elements, t, file_factor)
+
+		#Calculate vortex momentum
        	compute_vortex_momentum(flow_elements, vortex_momentum, t)
        	
     print "[DONE]"
@@ -459,6 +480,7 @@ flow_elements = []
 vortex_momentum = []
 free_stream = Uniform(v_infinity,0)
 
+
 ###########################################################################################
 
 #initiate solver
@@ -467,7 +489,8 @@ sol = Solver(dt)
 ###########################################################################################
 
 #initiate panels
-panel = init_panels(flow_elements)
+freestream_vortex_field = compute_freestream_vortex_field(flow_elements)
+panel = init_panels(freestream_vortex_field)
 
 ###########################################################################################
 #Solve for the time evolving system
@@ -476,67 +499,10 @@ solve_flow(flow_elements, panel)
 ###########################################################################################
 #Compute and plot drag
 drag = compute_drag_force(vortex_momentum)
-plot_drag(drag)
+# plot_drag(drag)
 print("--- %s seconds ---" % (time.time() - start_time))
 
 ###########################################################################################
-
-def plot_tracers(location_tracer_time, option, file_name):
-    if option=='movie':
-        theta = np.zeros((4, 1))
-        radius_vector = np.zeros((4, 2), dtype=complex)
-        for i in range(len(theta)):
-            theta[i] = i*np.pi/2
-            
-        for t in range(nt):
-            if t%5==0:
-                plt.plot(body.nodes.real, body.nodes.imag, linestyle='-')
-                for l in range(len(theta)):
-                    radius_vector[l, 0] = cmath.exp(1j*theta[l][0])
-                    plt.plot(radius_vector[l, :].real, radius_vector[l, :].imag, linestyle='-')
-                
-                for j in range(len(location_tracer_time[0, :])):
-                    if t!=0:
-                        plt.plot(location_tracer_time[0:t-1, j].real, location_tracer_time[0:t-1, j].imag, linestyle='-')
-                    else:
-                        plt.plot(location_tracer_time[0, j].real, location_tracer_time[0, j].imag, linestyle='-')
-                    plt.plot(location_tracer_time[t, j].real, location_tracer_time[t, j].imag, 'o')
-                plt.gca().set_aspect('equal', adjustable='box')
-                plt.xlim(-6, 6)
-                plt.ylim(-6, 6)
-                filename = "./Case_1/%04d.png" % (t/5)
-                plt.savefig(filename)
-                plt.clf()
-            theta = theta + dt*omega
-
-    elif option=='pathlines':
-        plt.plot(body.nodes.real, body.nodes.imag, linestyle='-')
-        for j in range(len(location_tracer_time[0, :])):
-            plt.plot(location_tracer_time[:, j].real, location_tracer_time[:, j].imag, linestyle='-')
-            plt.plot(location_tracer_time[-1, j].real, location_tracer_time[-1, j].imag, 'o')
-        plt.gca().set_aspect('equal', adjustable='box')
-        plt.xlim(-6, 6)
-        plt.ylim(-6, 6)
-        plt.xlabel('X coordinate')
-        plt.ylabel('Y coordinate')
-        filename = "./"+file_name+".png"
-        plt.savefig(filename)
-        plt.clf()
-    else:
-        print "Wrong plotting option"
-
-###########################################################################################
-
-def plot_general(location_flowelement_time, filename):
-    plt.plot(body.nodes.real, body.nodes.imag, linestyle='-')
-    plt.plot(location_flowelement_time[:, 0].real, location_flowelement_time[:, 0].imag, linestyle='-')
-
-    plt.plot(location_flowelement_time[-1, 0].real, location_flowelement_time[-1, 0].imag, 'o')
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.xlim(-6, 6)
-    plt.ylim(-6, 6)
-    plt.savefig('./'+filename+'.png')
-    plt.show()
 
 
 
