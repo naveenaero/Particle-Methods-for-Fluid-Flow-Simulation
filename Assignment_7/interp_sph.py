@@ -235,7 +235,5 @@ def test_interp(xmin, xmax, n_base, n_interp, h_factor):
     x_interp = np.linspace(xmin, xmax, n_interp)
     interp_sph(x_interp, n_base, h, 'gaussian', False)
     
-test_interp(-1,1,50,100,1)
-# test_kernel()
-# calculate_errors('gaussian', True)
+
 
