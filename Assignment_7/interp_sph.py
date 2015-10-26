@@ -25,15 +25,35 @@ def cubic_spline_kernel(rij, h):
         return func
     else:
         return 0
+
+def cubic_spline(rij, h):
+    ''' Function to implement the cubic spline
+        smoothing kernel
+    '''
+    r = np.abs(rij)
+    q = r/h
+    q2 = q*q
+    q3 = q*q*q
+
+    cond1 = q<1.0
+    cond2 = (q>=1.0) & (q<2.0)
+    cond3 = q>=2.0
+
+    func1 = (2./3 - q2 + 0.5*q3)/h
+    func2 = (2-q)**3/(6*h)
+    func3 = 0
+
+    return cond1*func1 + cond2*func2 + cond3*func3 
+
     
 def cubic_spline_derivative(rij, h):
     ''' Function to implement the cubic spline
         smoothing kernel derivative
     '''
-    r = abs(rij)
+    r = np.abs(rij)
     q = r/h
     r2 = r**2
-    h2 = h**2
+    h2 = h*2
     h3 = h**3
 
     if q < 1.0:
@@ -44,6 +64,26 @@ def cubic_spline_derivative(rij, h):
         return np.sign(rij)*func
     else:
         return 0
+
+def cubic_spline_kernel_derivative(rij, h):
+    ''' Function to implement the cubic spline
+        smoothing kernel derivative
+    '''
+    r = np.abs(rij)
+    q = r/h
+    r2 = r*r
+    h2 = h*h
+    h3 = h*h*h
+    
+    cond1 = q<1.0
+    cond2 = (q>=1.0) & (q<2.0)
+    cond3 = q>=2.0
+
+    func1 = (-2*r/h2 + 1.5*r2/h3)/h
+    func2 =  -1 *(2-q)**2/(2*h2)
+    func3 = 0
+
+    return np.sign(rij)*(cond1*func1 + cond2*func2 + cond3*func3)
 
 def test_spline():
     ''' Function to test the correct implementation
@@ -234,4 +274,8 @@ def test_interp(xmin, xmax, n_base, n_interp, h_factor):
     x_interp = np.linspace(xmin, xmax, n_interp)
     interp_sph(x_interp, n_base, h, 'gaussian', False)
     
+<<<<<<< HEAD
+=======
+
+>>>>>>> 5a81969349a250ed3763e2b784edb54db60f840b
 
