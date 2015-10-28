@@ -274,8 +274,4 @@ def test_interp(xmin, xmax, n_base, n_interp, h_factor):
     x_interp = np.linspace(xmin, xmax, n_interp)
     interp_sph(x_interp, n_base, h, 'gaussian', False)
     
-<<<<<<< HEAD
-=======
-
->>>>>>> 5a81969349a250ed3763e2b784edb54db60f840b
 
