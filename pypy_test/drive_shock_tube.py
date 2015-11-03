@@ -1,14 +1,16 @@
 import interp_sph as interp
 import numpy as np
-import matplotlib.pyplot as plt
-from tabulate import tabulate
+# import matplotlib.pyplot as plt
+# from tabulate import tabulate
 import time
 
 global gamma,gm1,final_time,dt,alpha,beta,start_time
 start_time = time.time()
 gamma = 1.4
 gm1 = gamma-1
+final_time = 0.2
 dt = 1e-4
+nt = int(final_time/dt)
 alpha = 1
 beta = 1
 
@@ -17,7 +19,7 @@ sound_speed = lambda rho,p: np.sqrt(gamma*p/rho)
 def euler_integrate(u0, rhs):
 	return u0 + rhs*dt
 
-def initialise(dx_l):
+def initialise():
 	'''Initialises the initial condition and the grid
 		with ghost particles which are kept dormant
 	'''
@@ -32,8 +34,8 @@ def initialise(dx_l):
 
 	xmin = -0.5
 	xmax = 0.5
-	
-	dx_r = (rho_l/rho_r)*dx_l
+	dx_l = 0.0015625
+	dx_r = 0.00625
 	
 	xmin_g = xmin - 0.1
 	xmax_g = xmax + 0.1
@@ -46,8 +48,7 @@ def initialise(dx_l):
 	ng_r = int(abs(xmax_g - xmax)/dx_r)
 
 	ng = [ng_l, ng_r]
-	print "particles:", len(x)-ng_l-ng_r
-	
+
 	rho = np.zeros_like(x)
 	p = np.zeros_like(x)
 	v = np.zeros_like(x)
@@ -60,11 +61,11 @@ def initialise(dx_l):
 
 	v[:] = 0
 
-	return x, ng, rho, rho*v, p/(gm1*rho), dx_l, dx_r
+	return x, ng, rho, rho*v, p/(gm1*rho)
 
 class Particle:
 	'''Class for a particle with various particles'''
-	def __init__(self, conservative_variables, position, ng, m, dx):
+	def __init__(self, conservative_variables, position, ng):
 		self.rho = conservative_variables[0]
 		self.rhou = conservative_variables[1]
 		self.ener = conservative_variables[2]
@@ -73,19 +74,19 @@ class Particle:
 		self.p = gm1*self.rho*self.ener
 		self.c = np.sqrt(gamma*self.p/self.rho)
 		self.x = position
-		self.m = m
-		self.h = 2*dx
+		self.m = 0.0015625
+		self.h = 2*0.00625
 		self.ng = ng
 
 
-def init_particles(dx_l):
+def init_particles():
 	'''initialises the particles with the initial conditions &
 		creates objects for all particles
 	'''
-	[x, ng, rho, rhou, ener, dx_l, dx_r] = initialise(dx_l)
+	[x, ng, rho, rhou, ener] = initialise()
 	particles = []
 	for i in range(len(x)):
-		particles.append(Particle([rho[i], rhou[i], ener[i]], x[i], ng, dx_l, dx_r))
+		particles.append(Particle([rho[i], rhou[i], ener[i]], x[i], ng))
 	return particles
 
 def get_properties(particles):
@@ -152,7 +153,9 @@ def euler_rhs(x, rho, v, p, particles ,t):
 	m_j = m_i
 	
 	r_j = np.copy(x)
-	h_ij = particles[0].h*one
+	max_dx = np.max(np.abs(x[ng_l+1:-ng_r]-x[ng_l:-ng_r-1]))
+	h_ij = 2*max_dx*one
+	# h_ij = particles[0].h*one
 	
 	v_j = np.copy(v)
 	c_j = sound_speed(rho, p)
@@ -284,54 +287,56 @@ def compute_L2_error(computed, exact):
 	''' computes the L2 error norm '''
 	return np.linalg.norm(computed-exact)/np.linalg.norm(exact)
 
-def plot_state(x_new, rho_new, v_new, p_new, ener_new):
-	''' plots the particle properties '''
+# def plot_state(x_new, rho_new, v_new, p_new, ener_new):
+# 	''' plots the particle properties '''
 	
-	exact_sol = exactSod(x_new)
-	exact_rho = exact_sol[0]
-	exact_v = exact_sol[1]
-	exact_p = exact_sol[2]
-	exact_ener = exact_sol[4]
+# 	exact_sol = exactSod(x_new)
+# 	exact_rho = exact_sol[0]
+# 	exact_v = exact_sol[1]
+# 	exact_p = exact_sol[2]
+# 	exact_ener = exact_sol[4]
 
 
-	fig = plt.figure(1)
+# 	fig = plt.figure(1)
 
-	plt.subplot(2,2,1)
-	plt.plot(x_new, rho_new, color='blue',label='computed')
-	plt.plot(x_new, exact_rho, color='green',label='analytical')
-	plt.title('Density')
-	# plt.legend()
+# 	plt.subplot(2,2,1)
+# 	plt.plot(x_new, rho_new, color='blue',label='computed')
+# 	plt.plot(x_new, exact_rho, color='green',label='analytical')
+# 	plt.title('Density')
+# 	# plt.legend()
 
-	plt.subplot(2,2,2)
-	plt.plot(x_new, p_new, color='blue',label='computed')
-	plt.plot(x_new, exact_p, color='green',label='analytical')
-	plt.title('Pressure')
-	# plt.legend()
+# 	plt.subplot(2,2,2)
+# 	plt.plot(x_new, p_new, color='blue',label='computed')
+# 	plt.plot(x_new, exact_p, color='green',label='analytical')
+# 	plt.title('Pressure')
+# 	# plt.legend()
 
-	plt.subplot(2,2,3)
-	plt.plot(x_new, ener_new, color='blue',label='computed')
-	plt.plot(x_new, exact_ener, color='green',label='analytical')
-	plt.title('Energy')
-	# plt.legend()
+# 	plt.subplot(2,2,3)
+# 	plt.plot(x_new, ener_new, color='blue',label='computed')
+# 	plt.plot(x_new, exact_ener, color='green',label='analytical')
+# 	plt.title('Energy')
+# 	# plt.legend()
 
-	plt.subplot(2,2,4)
-	plt.plot(x_new, v_new, color='blue',label='computed')
-	plt.plot(x_new, exact_v, color='green',label='analytical' )
-	plt.title('Velocity')
+# 	plt.subplot(2,2,4)
+# 	plt.plot(x_new, v_new, color='blue',label='computed')
+# 	plt.plot(x_new, exact_v, color='green',label='analytical' )
+# 	plt.title('Velocity')
 
-	# plt.legend()
+# 	# plt.legend()
 
-	e_rho = compute_L2_error(rho_new, exact_rho)
-	e_v = compute_L2_error(v_new, exact_v)
-	e_ener = compute_L2_error(ener_new, exact_ener)
-	e_p = compute_L2_error(p_new, exact_p)
+# 	e_rho = compute_L2_error(rho_new, exact_rho)
+# 	e_v = compute_L2_error(v_new, exact_v)
+# 	e_ener = compute_L2_error(ener_new, exact_ener)
+# 	e_p = compute_L2_error(p_new, exact_p)
 	
-	print "Max L2 error = ", max([e_rho, e_v, e_ener, e_p])
+# 	print "Max L2 error = ", max([e_rho, e_v, e_ener, e_p])
 
 
-	# plt.savefig('5.png')
-	plt.show()
+# 	plt.savefig('5.png')
+# 	plt.show()
 
+
+	
 
 def update_density(x, rho, particles):
 	''' function for density summation '''
@@ -403,18 +408,17 @@ def driver(particles, nt, plotter):
 		
 		[x_new, rho_new, v_new, p_new, ener_new] = integrate(acc, initial_cond, particles)
 		
-		if (t+1)%nt==0 and plotter:
-			plot_state(x_new[ng_l:-ng_r], rho_new[ng_l:-ng_r], v_new[ng_l:-ng_r], p_new[ng_l:-ng_r], ener_new[ng_l:-ng_r])
-		print "Time:",(t+1)*dt
+		# if (t+1)%nt==0 and plotter:
+		# 	plot_state(x_new[ng_l:-ng_r], rho_new[ng_l:-ng_r], v_new[ng_l:-ng_r], p_new[ng_l:-ng_r], ener_new[ng_l:-ng_r])
+		print "Time:",(t+1)*dt,"--- %s seconds ---"% (time.time() - start_time)
 		
 	
-def run(final_time, plotter, dx_l):
+def run(nt, plotter):
 	''' runs the driver function '''
-	nt = int(final_time/dt)
-	particles = init_particles(dx_l)
+	particles = init_particles()
 	driver(particles, nt, plotter)
 
 
-run(0.2, False, 0.0015625)
+run(nt, True)
 
 

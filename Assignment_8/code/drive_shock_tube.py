@@ -1,14 +1,15 @@
 import interp_sph as interp
 import numpy as np
 import matplotlib.pyplot as plt
-from tabulate import tabulate
 import time
 
 global gamma,gm1,final_time,dt,alpha,beta,start_time
 start_time = time.time()
 gamma = 1.4
 gm1 = gamma-1
+# final_time = 0.001
 dt = 1e-4
+# nt = int(final_time/dt)
 alpha = 1
 beta = 1
 
@@ -32,7 +33,8 @@ def initialise(dx_l):
 
 	xmin = -0.5
 	xmax = 0.5
-	
+
+	# dx_l = 0.0001
 	dx_r = (rho_l/rho_r)*dx_l
 	
 	xmin_g = xmin - 0.1
@@ -47,7 +49,6 @@ def initialise(dx_l):
 
 	ng = [ng_l, ng_r]
 	print "particles:", len(x)-ng_l-ng_r
-	
 	rho = np.zeros_like(x)
 	p = np.zeros_like(x)
 	v = np.zeros_like(x)
@@ -130,10 +131,12 @@ def sound_speed_avg(rho, p, i, j):
 	c_ij = np.average([c_i, c_j])
 	return c_ij
 
-def euler_rhs(x, rho, v, p, particles ,t):
+def euler_rhs(x, rho, v, p, particles, bins, bins_index):
 	''' computes the acceleration terms in the Euler Gas Dynamics
 		equations
 	'''
+
+		
 	ng_l = particles[0].ng[0]
 	ng_r = particles[0].ng[1]
 
@@ -159,13 +162,20 @@ def euler_rhs(x, rho, v, p, particles ,t):
 	
 	rho_j = np.copy(rho)
 	p_j = np.copy(p)
+
+	W_ij = np.zeros(ng_particles)
+	W_ij_prime = np.zeros(ng_particles)
 	
 	for i in range(ng_l, ng_l + n_particles):
 		r_i  = x[i]
 		r_ij = r_i - r_j
-		
-		W_ij = interp.cubic_spline(r_ij, h_ij)
-		W_ij_prime = interp.cubic_spline_kernel_derivative(r_ij, h_ij)
+
+
+		bin_min = bins[bins_index[i]-1][0]
+		bin_max = bins[bins_index[i]+1][-1]
+
+		W_ij[bin_min:bin_max] = interp.cubic_spline(r_ij[bin_min:bin_max], h_ij[bin_min:bin_max])
+		W_ij_prime[bin_min:bin_max] = interp.cubic_spline_kernel_derivative(r_ij[bin_min:bin_max], h_ij[bin_min:bin_max])
 
 		v_i = v[i]*one
 		v_ij = v_i - v_j
@@ -279,6 +289,26 @@ def exactSod(x,t=0.2,x0=0,ql=[1.,1.,0.],qr=[0.25,0.1,0.],gamma=1.4):
 
 	return([ro,v,p,rou,ener])
 
+def create_bins(x, h):
+	bins = {}
+	k = 0
+	bins[k] = []
+	bin_width = 2*h
+	n_particles = len(x)
+	xmin = np.min(x)
+	bins_index = np.zeros_like(x)
+
+	for i in range(n_particles):
+		if x[i]-xmin<=bin_width:
+			bins[k].append(i)
+			bins_index[i] = k	
+		else:
+			xmin = x[i]
+			k += 1
+			bins[k] = [i]
+			bins_index[i] = k
+		
+	return bins, bins_index
 
 def compute_L2_error(computed, exact):
 	''' computes the L2 error norm '''
@@ -329,11 +359,10 @@ def plot_state(x_new, rho_new, v_new, p_new, ener_new):
 	print "Max L2 error = ", max([e_rho, e_v, e_ener, e_p])
 
 
-	# plt.savefig('5.png')
+	plt.savefig('5.png')
 	plt.show()
 
-
-def update_density(x, rho, particles):
+def update_density(x, rho, particles, bins, bins_index):
 	''' function for density summation '''
 	ng_l = particles[0].ng[0]
 	ng_r = particles[0].ng[1]
@@ -346,14 +375,20 @@ def update_density(x, rho, particles):
 	r_j = np.copy(x)
 	h_ij = one*particles[0].h
 	rho_a = np.zeros(n_particles)
+	W_ij = np.zeros(ng_particles)
+
 	for i in range(ng_l, n_particles + ng_l):
 			r_i = x[i]
 			r_ij = x[i] - r_j
-			W_ij = interp.cubic_spline(r_ij, h_ij)
+
+			bin_min = bins[bins_index[i]-1][0]
+			bin_max = bins[bins_index[i]+1][-1]
+
+			W_ij[bin_min:bin_max] = interp.cubic_spline(r_ij[bin_min:bin_max], h_ij[bin_min:bin_max])
 			rho_a[i - ng_l] = np.sum(m_j*W_ij)
 	return rho_a
 
-def integrate(acc, initial_cond, particles):
+def integrate(acc, initial_cond, particles, bins, bins_index):
 	''' function for integrating the equations '''
 	
 	ng_l = particles[0].ng[0]
@@ -373,18 +408,16 @@ def integrate(acc, initial_cond, particles):
 	x_new[ng_l:-ng_r] = euler_integrate(x_new[ng_l:-ng_r], x_sph + v_new[ng_l:-ng_r])
 	ener_new[ng_l:-ng_r] = euler_integrate(ener_new[ng_l:-ng_r], ener_a)
 	v_new[ng_l:-ng_r] = euler_integrate(v_new[ng_l:-ng_r], v_a)
-	rho_new[ng_l:-ng_r] = update_density(x_new, rho_new, particles)
+	rho_new[ng_l:-ng_r] = update_density(x_new, rho_new, particles, bins, bins_index)
 	p_new[ng_l:-ng_r] = gm1*ener_new[ng_l:-ng_r]*rho_new[ng_l:-ng_r]
 	
 	return x_new, rho_new, v_new, p_new, ener_new
-
-
-
 
 def driver(particles, nt, plotter):
 	''' function for driving all the other functions '''
 	
 	[x, rho, v, p] = get_properties(particles)
+
 	
 	rho_new = np.copy(rho)
 	v_new = np.copy(v)
@@ -396,25 +429,57 @@ def driver(particles, nt, plotter):
 	ng_r = particles[0].ng[1]
 		
 	for t in range(nt):
-		[x_sph, rho_a, v_a, ener_a] = euler_rhs(x_new, rho_new, v_new, p_new, particles, t)
+
+		[bins, bins_index] = create_bins(x_new, particles[0].h)
+
+		[x_sph, rho_a, v_a, ener_a] = euler_rhs(x_new, rho_new, v_new, p_new, particles, bins, bins_index)
 		
 		acc = [x_sph, rho_a, v_a, ener_a]
 		initial_cond = [x_new, rho_new, v_new, p_new, ener_new]
 		
-		[x_new, rho_new, v_new, p_new, ener_new] = integrate(acc, initial_cond, particles)
+		[x_new, rho_new, v_new, p_new, ener_new] = integrate(acc, initial_cond, particles, bins, bins_index)
 		
 		if (t+1)%nt==0 and plotter:
 			plot_state(x_new[ng_l:-ng_r], rho_new[ng_l:-ng_r], v_new[ng_l:-ng_r], p_new[ng_l:-ng_r], ener_new[ng_l:-ng_r])
 		print "Time:",(t+1)*dt
 		
-	
+
+# Test Functions
 def run(final_time, plotter, dx_l):
 	''' runs the driver function '''
 	nt = int(final_time/dt)
 	particles = init_particles(dx_l)
 	driver(particles, nt, plotter)
 
+def test_binning():
+	rand_pos = np.random.random(30)
+	rand_pos = np.sort(rand_pos)
+	[bins, bins_index] = create_bins(rand_pos, 0.1)
+	for key in bins:
+		x = np.asarray(bins[key])
+		y = np.zeros_like(x)
+		plt.plot(rand_pos[x], y, 'o', label='bin '+str(key+1))
 
-run(0.2, False, 0.0015625)
+	# get NNPS
+	rand_particle = 10
+	bin_np = bins_index[rand_particle]
+	neighbour_left = bin_np-1
+	neighbour_right = bin_np+1
+	neighbours = bins[neighbour_left] + bins[bin_np] + bins[neighbour_right]
+	
+	neighbours = np.asarray(neighbours)
+	plt.plot(rand_pos[neighbours], np.zeros_like(neighbours)-0.1, 'o', label='NNPS for particle 10')
+	plt.plot(rand_pos[10], -0.2, 'ro', label='Particle 10')
+
+	plt.ylim(-0.4, 0.2)
+	plt.xlim(-0.1, 2)
+	plt.xlabel('X')
+	plt.legend()
+	plt.savefig('test_binning.png')
+	plt.show()
+
+test_binning()
+
+
 
 
