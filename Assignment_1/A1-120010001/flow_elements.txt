@@ -1,0 +1,15 @@
+uniform 1 0
+vortex 0 0.25 -1
+vortex 0 -0.25 -1
+vortex 0.25 0 -1
+vortex -0.25 0 -1
+tracer -2 1
+tracer -2 4
+tracer -2 0.5
+tracer -2 0.25
+tracer -2 0.15
+tracer -2 -0.20
+tracer -2 -0.40
+tracer -2 -0.80
+tracer -2 -0.95
+tracer -2 -0.05
